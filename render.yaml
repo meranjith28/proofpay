@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: proofpay
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: AI_PROVIDER
+        value: google
+      - key: MAX_PAYOUT_USD
+        value: "500"
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_URL
+        sync: false
