@@ -5,13 +5,15 @@ import { SubmitButton } from "./submit-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   await migrate();
   const jobs = await sql`select id, title, amount, status, created_at from jobs order by created_at desc limit 50`;
   const paid = jobs.filter((j) => j.status === "paid");
 
   return (
     <div className="space-y-10">
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{error}</div>}
       <section>
         <h1 className="text-3xl font-semibold tracking-tight">Get paid the moment the work is proven.</h1>
         <p className="mt-2 max-w-2xl text-slate-600">

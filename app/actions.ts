@@ -7,6 +7,14 @@ import { generateChecklist, verifySubmission } from "@/lib/ai";
 import { createFundingOrder } from "@/lib/paypal";
 import { settleJob, cancelAndRefund } from "@/lib/agent";
 
+function friendly(e: unknown) {
+  const msg = String((e as Error)?.message ?? e);
+  if (/high demand|overloaded|UNAVAILABLE|503|429|quota/i.test(msg))
+    return "The AI service is busy right now. Please try again in a minute.";
+  if (/PayPal/i.test(msg)) return "PayPal returned an error. Please try again.";
+  return "Something went wrong. Please try again.";
+}
+
 let migrated = false;
 async function ready() {
   if (!migrated) { await migrate(); migrated = true; }
@@ -21,7 +29,14 @@ export async function postJob(form: FormData) {
   if (!title || !brief || !(amount > 0) || !clientEmail) throw new Error("All fields are required");
 
   const id = randomUUID().slice(0, 8);
-  const { items, work_brief } = await generateChecklist(title, brief);
+  let generated;
+  try {
+    generated = await generateChecklist(title, brief);
+  } catch (e) {
+    console.error(e);
+    redirect(`/?error=${encodeURIComponent(friendly(e))}`);
+  }
+  const { items, work_brief } = generated;
   await sql`insert into jobs (id, title, brief, amount, client_email, checklist)
             values (${id}, ${title}, ${brief}, ${amount}, ${clientEmail}, ${sql.json({ items, work_brief } as never)})`;
   await logEvent(id, "client", "job_posted", { amount });
@@ -32,7 +47,14 @@ export async function postJob(form: FormData) {
 export async function fundJob(id: string) {
   await ready();
   const [job] = await sql`select * from jobs where id = ${id}`;
-  const { orderId, approveUrl } = await createFundingOrder(id, job.title, Number(job.amount));
+  let order;
+  try {
+    order = await createFundingOrder(id, job.title, Number(job.amount));
+  } catch (e) {
+    console.error(e);
+    redirect(`/jobs/${id}?error=${encodeURIComponent(friendly(e))}`);
+  }
+  const { orderId, approveUrl } = order;
   await sql`update jobs set status = 'funding', paypal_order_id = ${orderId}, updated_at = now() where id = ${id}`;
   await logEvent(id, "paypal", "order_created", { orderId });
   if (!approveUrl) throw new Error("PayPal did not return an approval link");
@@ -68,12 +90,26 @@ export async function submitWork(id: string, form: FormData) {
   await sql`update jobs set status = 'submitted', updated_at = now() where id = ${id}`;
   await logEvent(id, "freelancer", "work_submitted", { file: file?.name ?? null });
 
-  const verdict = await verifySubmission(job.checklist.items, fileText, note, filePart);
+  let verdict;
+  try {
+    verdict = await verifySubmission(job.checklist.items, fileText, note, filePart);
+  } catch (e) {
+    console.error(e);
+    await sql`update jobs set status = ${job.status}, updated_at = now() where id = ${id}`;
+    await logEvent(id, "agent", "verification_failed", { summary: friendly(e) });
+    redirect(`/jobs/${id}?error=${encodeURIComponent(friendly(e))}`);
+  }
   await sql`insert into submissions (job_id, note, file_name, file_text, verdict, overall)
             values (${id}, ${note}, ${file?.name ?? null}, ${fileText.slice(0, 100_000)}, ${sql.json(verdict.items as never)}, ${verdict.overall})`;
   await logEvent(id, "agent", "verification_complete", { overall: verdict.overall, summary: verdict.summary });
 
-  await settleJob(id);
+  try {
+    await settleJob(id);
+  } catch (e) {
+    console.error(e);
+    await logEvent(id, "agent", "settlement_failed", { summary: friendly(e) });
+    redirect(`/jobs/${id}?error=${encodeURIComponent(friendly(e))}`);
+  }
   revalidatePath(`/jobs/${id}`);
 }
 

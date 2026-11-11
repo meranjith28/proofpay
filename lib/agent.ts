@@ -1,6 +1,6 @@
 import { generateText, tool, stepCountIs } from "ai";
 import { z } from "zod";
-import { model } from "./model";
+import { withModel, callOptions } from "./model";
 import { sql, logEvent } from "./db";
 import { payFreelancer, refundClient } from "./paypal";
 
@@ -15,32 +15,40 @@ export async function settleJob(jobId: string) {
   const [sub] = await sql`select * from submissions where job_id = ${jobId} order by id desc limit 1`;
   if (!job || !sub) throw new Error("Job or submission not found");
 
+  async function releasePayment({ note }: { note: string }) {
+    if (sub.overall !== "pass") return { ok: false, error: "Refused: submission did not pass verification" };
+    const [fresh] = await sql`select payout_batch_id from jobs where id = ${jobId}`;
+    if (fresh?.payout_batch_id) return { ok: false, error: "Already paid" };
+    const payout = await payFreelancer(jobId, job.freelancer_email, Number(job.amount), note);
+    await sql`update jobs set status = 'paid', payout_batch_id = ${payout.batchId}, updated_at = now() where id = ${jobId}`;
+    await logEvent(jobId, "paypal", "payout_sent", payout);
+    return { ok: true, ...payout };
+  }
+  async function requestRevision({ message }: { message: string }) {
+    await sql`update jobs set status = 'needs_revision', updated_at = now() where id = ${jobId}`;
+    await logEvent(jobId, "agent", "revision_requested", { message });
+    return { ok: true };
+  }
+
   const tools = {
     release_payment: tool({
       description: "Pay the freelancer via PayPal Payouts. Only valid when every checklist item passed.",
       inputSchema: z.object({ note: z.string().describe("Short note to the freelancer explaining the payment") }),
-      execute: async ({ note }) => {
-        if (sub.overall !== "pass") return { ok: false, error: "Refused: submission did not pass verification" };
-        if (job.payout_batch_id) return { ok: false, error: "Already paid" };
-        const payout = await payFreelancer(jobId, job.freelancer_email, Number(job.amount), note);
-        await sql`update jobs set status = 'paid', payout_batch_id = ${payout.batchId}, updated_at = now() where id = ${jobId}`;
-        await logEvent(jobId, "paypal", "payout_sent", payout);
-        return { ok: true, ...payout };
-      },
+      execute: releasePayment,
     }),
     request_revision: tool({
       description: "Send the work back to the freelancer listing exactly which checklist items are missing.",
       inputSchema: z.object({ message: z.string().describe("Clear list of what is missing and how to fix it") }),
-      execute: async ({ message }) => {
-        await sql`update jobs set status = 'needs_revision', updated_at = now() where id = ${jobId}`;
-        await logEvent(jobId, "agent", "revision_requested", { message });
-        return { ok: true };
-      },
+      execute: requestRevision,
     }),
   };
 
-  const result = await generateText({
-    model: model(),
+  console.log("[agent] settling job", jobId, sub.overall);
+  let result;
+  try {
+    result = await withModel((model) => generateText({
+    model,
+    ...callOptions(),
     tools,
     stopWhen: stepCountIs(4),
     system:
@@ -48,7 +56,16 @@ export async function settleJob(jobId: string) {
       "call exactly one tool: release_payment if overall is 'pass', otherwise request_revision " +
       "with a specific, friendly list of the failed items. Then reply with one sentence summarising what you did.",
     prompt: `Job: ${job.title} ($${job.amount})\nVerification:\n${JSON.stringify({ overall: sub.overall, items: sub.verdict }, null, 2)}`,
-  });
+    }));
+  } catch (e) {
+    // AI unavailable: apply the same rules directly so money never gets stuck.
+    console.error("[agent] model unavailable, applying rules directly", e);
+    if (sub.overall === "pass") await releasePayment({ note: `Verified: ${job.title}` });
+    else await requestRevision({ message: "Some checklist items did not pass. See the red items in the checklist." });
+    await logEvent(jobId, "agent", "settlement_summary", { text: "Settled by platform rules (AI agent unavailable)." });
+    return "fallback";
+  }
+  console.log("[agent] settlement done");
   await logEvent(jobId, "agent", "settlement_summary", { text: result.text });
   return result.text;
 }

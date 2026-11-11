@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 type Item = { id: number; requirement: string; how_to_verify: string };
 type Verdict = { id: number; passed: boolean; evidence: string; reason: string };
 
-export default async function JobPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ funding?: string }> }) {
+export default async function JobPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ funding?: string; error?: string }> }) {
   await migrate();
   const { id } = await params;
-  const { funding } = await searchParams;
+  const { funding, error } = await searchParams;
   const [job] = await sql`select * from jobs where id = ${id}`;
   if (!job) notFound();
   const [sub] = await sql`select * from submissions where job_id = ${id} order by id desc limit 1`;
@@ -23,6 +23,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
 
   return (
     <div className="space-y-8">
+      {error && <Banner tone="rose">{error}</Banner>}
       {funding === "ok" && <Banner tone="green">Payment captured. Funds are held until the work passes verification.</Banner>}
       {funding === "error" && <Banner tone="rose">Funding did not complete. Please try again.</Banner>}
       {funding === "cancelled" && <Banner tone="amber">Funding was cancelled.</Banner>}
@@ -91,7 +92,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
                 <SubmitButton pending="Accepting…">Accept job</SubmitButton>
               </form>
             )}
-            {(job.status === "in_progress" || job.status === "needs_revision") && (
+            {(job.status === "in_progress" || job.status === "needs_revision" || job.status === "submitted") && (
               <form action={submitWork.bind(null, job.id)} className="space-y-3">
                 {revision && <div className="rounded-md bg-orange-50 p-3 text-sm text-orange-900">{revision.detail.message}</div>}
                 <p className="text-sm text-slate-600">Freelancer: upload your deliverable (PDF, image or text) or paste it below.</p>
@@ -101,7 +102,6 @@ export default async function JobPage({ params, searchParams }: { params: Promis
                 <SubmitButton pending="AI agent is verifying your work…">Submit for verification</SubmitButton>
               </form>
             )}
-            {job.status === "submitted" && <p className="text-sm text-slate-600">The AI agent is reviewing the submission.</p>}
             {job.status === "paid" && <p className="text-sm text-green-800">All requirements verified. ${Number(job.amount).toFixed(2)} was paid to {job.freelancer_email} via PayPal Payouts (batch {job.payout_batch_id}).</p>}
             {job.status === "refunded" && <p className="text-sm text-rose-800">This job was cancelled and the client was refunded (refund {job.refund_id}).</p>}
           </Card>
@@ -121,7 +121,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
                     <span className="font-medium">{e.action.replaceAll("_", " ")}</span>
                     {e.detail?.text && <span className="block text-slate-600">{e.detail.text}</span>}
                     {e.detail?.summary && <span className="block text-slate-600">{e.detail.summary}</span>}
-                    <span className="block text-xs text-slate-400">{new Date(e.created_at).toLocaleString()}</span>
+                    <span className="block text-xs text-slate-400">{new Date(e.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}</span>
                   </span>
                 </li>
               ))}
