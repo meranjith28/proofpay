@@ -1,13 +1,9 @@
 import { generateText, tool, stepCountIs } from "ai";
-import { google } from "@ai-sdk/google";
-import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { model } from "./model";
 import { sql, logEvent } from "./db";
 import { payFreelancer, refundClient } from "./paypal";
 
-function model() {
-  return process.env.AI_PROVIDER === "anthropic" ? anthropic("claude-sonnet-4-5") : google("gemini-2.5-flash");
-}
 
 /**
  * Settlement agent: after verification, decides and executes the payment outcome

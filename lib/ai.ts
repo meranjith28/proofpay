@@ -1,14 +1,8 @@
 import { generateObject } from "ai";
-import { google } from "@ai-sdk/google";
-import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { model } from "./model";
 import type { ChecklistItem } from "./db";
 
-function model() {
-  return process.env.AI_PROVIDER === "anthropic"
-    ? anthropic("claude-sonnet-4-5")
-    : google("gemini-2.5-flash");
-}
 
 const checklistSchema = z.object({
   items: z
