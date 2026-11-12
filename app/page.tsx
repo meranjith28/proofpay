@@ -28,8 +28,8 @@ const PROOF = [
   { icon: IconEye, title: "Websites opened for real", text: "A KERNEL cloud browser loads the site on desktop and phone, checks links and forms, and keeps screenshots." },
   { icon: IconShield, title: "Rules the agent can't break", text: "No payout without a full pass and confirmed funds. One payout per job, with a spend cap. All enforced in code." },
   { icon: IconScale, title: "A person has the last word", text: "Freelancers can ask a different AI model for a second opinion. If it passes, the client decides." },
-  { icon: IconMail, title: "Everyone stays informed", text: "Funded, accepted, paid, changes needed, refunded: each event sends an email through Zapier." },
-  { icon: IconClock, title: "Fair deadlines and refunds", text: "Clients can cancel before anyone accepts, or after a missed deadline. Never in the middle of honest work." },
+  { icon: IconMail, title: "Everyone stays informed", text: "Funded, requested, assigned, paid, changes needed, refunded: each event sends an email through Zapier." },
+  { icon: IconClock, title: "Fair deadlines and refunds", text: "Clients can cancel before a freelancer is assigned, or after a missed deadline. Never in the middle of honest work." },
 ];
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {

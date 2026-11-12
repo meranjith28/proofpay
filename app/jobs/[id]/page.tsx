@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { currentUser, accessTo } from "@/lib/auth";
 import { sql, migrate } from "@/lib/db";
-import { fundJob, acceptJob, submitWork, refundJob, requestSecondOpinion, decideDispute } from "../../actions";
+import { fundJob, requestJob, withdrawRequest, assignFreelancer, submitWork, refundJob, requestSecondOpinion, decideDispute } from "../../actions";
 import { AskAgent } from "../../ask-agent";
 import { StatusBadge } from "../../status";
 import { SubmitButton } from "../../submit-button";
@@ -19,7 +19,7 @@ type Item = { id: number; requirement: string; how_to_verify: string };
 type Verdict = { id: number; passed: boolean; evidence: string; reason: string };
 type Measurements = Record<string, unknown>;
 
-const STEPS = ["Posted", "Funded", "Accepted", "Submitted", "Paid"];
+const STEPS = ["Posted", "Funded", "Assigned", "Submitted", "Paid"];
 function stepIndex(status: string) {
   return ({ draft: 0, funding: 0, funded: 1, in_progress: 2, submitted: 3, needs_revision: 3, disputed: 3, paid: 4, refunded: 1 } as Record<string, number>)[status] ?? 0;
 }
@@ -37,6 +37,10 @@ export default async function JobPage({ params, searchParams }: { params: Promis
   if (!access.canView) return <NotYours taken={user.role === "freelancer" && !!job.freelancer_email} role={user.role} />;
   const [sub] = await sql`select * from submissions where job_id = ${id} order by id desc limit 1`;
   const events = await sql`select * from events where job_id = ${id} order by id asc`;
+  const requests = job.status === "funded"
+    ? await sql`select id, freelancer_email, freelancer_name, created_at from job_requests where job_id = ${id} order by id asc`
+    : [];
+  const myRequest = user.role === "freelancer" && requests.some((r) => r.freelancer_email.toLowerCase() === user.email.toLowerCase());
   const items: Item[] = job.checklist.items ?? [];
   const verdicts: Verdict[] = sub?.verdict ?? [];
   const latest = (action: string) => [...events].reverse().find((e) => e.action === action);
@@ -171,7 +175,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
         </div>
 
         <div className="order-first space-y-6 md:order-none md:col-span-2">
-          <NextStep job={job} revision={revision?.detail?.message} amount={amount} sample={sample} sampleUrl={sampleUrl}
+          <NextStep requested={myRequest} applicants={access.isClient ? (requests as unknown as Applicant[]) : []} job={job} revision={revision?.detail?.message} amount={amount} sample={sample} sampleUrl={sampleUrl}
             role={access.isClient ? "client" : access.isFreelancer || access.openForFreelancers ? "freelancer" : "visitor"}
             canDispute={job.status === "needs_revision" && sub?.reviewer === "primary"}
             passedCount={passedCount} total={items.length} />
@@ -180,7 +184,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
           <Card title="Payment record" subtitle="PayPal references for every money movement on this job.">
             <dl className="divide-y divide-line text-sm">
               <Row label="Client" value={job.client_email} />
-              <Row label="Freelancer" value={job.freelancer_email ?? "Not accepted yet"} />
+              <Row label="Freelancer" value={job.freelancer_email ?? "Not assigned yet"} />
               <Row label="PayPal order" value={job.paypal_order_id ?? "Not created yet"} mono={!!job.paypal_order_id} />
               <Row label="Capture" value={job.paypal_capture_id ?? "Not captured yet"} mono={!!job.paypal_capture_id} />
               {funded && <Row label="Funds confirmed" value={funded.detail?.checked_via ?? "PayPal"} />}
@@ -194,7 +198,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
               <SubmitButton variant="danger" pending="Refunding through PayPal…">
                 {overdue && job.status !== "funded" ? "Deadline missed: refund the client" : "Cancel job and refund the client"}
               </SubmitButton>
-              <p className="text-xs text-muted">Refunds are possible before a freelancer accepts, or after a missed deadline.</p>
+              <p className="text-xs text-muted">Refunds are possible before a freelancer is assigned, or after a missed deadline.</p>
             </form>
           )}
 
@@ -226,8 +230,10 @@ export default async function JobPage({ params, searchParams }: { params: Promis
   );
 }
 
+type Applicant = { id: number; freelancer_email: string; freelancer_name: string; created_at: Date };
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function NextStep({ job, revision, amount, sample, sampleUrl, role, canDispute, passedCount, total }: { job: any; revision?: string; amount: number; sample?: string; sampleUrl?: string; role: "client" | "freelancer" | "visitor"; canDispute: boolean; passedCount: number; total: number }) {
+function NextStep({ requested, applicants, job, revision, amount, sample, sampleUrl, role, canDispute, passedCount, total }: { requested: boolean; applicants: Applicant[]; job: any; revision?: string; amount: number; sample?: string; sampleUrl?: string; role: "client" | "freelancer" | "visitor"; canDispute: boolean; passedCount: number; total: number }) {
   const accept = ACCEPT[job.category as Category] ?? ACCEPT.writing;
   const turn = (who: string, tone: string) => <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${tone}`}>{who}</span>;
   const waiting = (who: string, title: string, text: string) => (
@@ -245,14 +251,47 @@ function NextStep({ job, revision, amount, sample, sampleUrl, role, canDispute, 
         </form>
       ) : waiting("Client's turn", "Waiting for funding", "The client hasn't funded this job yet."))}
 
-      {s === "funded" && (role === "freelancer" ? (
-        <form action={acceptJob.bind(null, job.id)} className="space-y-3">
+      {s === "funded" && role === "freelancer" && (requested ? (
+        <div className="space-y-3">
+          {turn("Client's turn", "bg-slate-200 text-slate-700")}
+          <h2 className="text-2xl font-bold">Request sent</h2>
+          <p className="text-sm text-muted">The client can see your track record and will choose a freelancer. You'll get an email if they assign the job to you.</p>
+          <form action={withdrawRequest.bind(null, job.id)}><SubmitButton variant="ghost" pending="Withdrawing…">Withdraw my request</SubmitButton></form>
+        </div>
+      ) : (
+        <form action={requestJob.bind(null, job.id)} className="space-y-3">
           {turn("Open job", "bg-held text-white")}
-          <h2 className="text-xl font-bold">Accept this job</h2>
-          <p className="text-sm text-muted">${amount.toFixed(2)} is already held. Once you accept, the job is yours alone, and the payout goes to your PayPal account when every checklist item passes.</p>
-          <SubmitButton pending="Accepting…">Accept job</SubmitButton>
+          <h2 className="text-2xl font-bold">Request this job</h2>
+          <p className="text-sm text-muted">${amount.toFixed(2)} is already held. The client sees your track record and assigns the job to one freelancer. Once it's yours, the payout goes to your PayPal account when every checklist item passes.</p>
+          <SubmitButton pending="Sending your request…">Request this job</SubmitButton>
         </form>
-      ) : waiting("Freelancers' turn", "Waiting for a freelancer", "Your job is live on the Find work board. The first freelancer to accept gets it."))}
+      ))}
+      {s === "funded" && role !== "freelancer" && (applicants.length === 0
+        ? waiting("Freelancers' turn", "Waiting for requests", "Your job is live on the Find work board. Freelancers who want it will appear here, and you choose who gets it.")
+        : (
+          <div className="space-y-4">
+            {turn("Your turn", "bg-ink text-white")}
+            <h2 className="text-2xl font-bold">Choose your freelancer</h2>
+            <p className="text-sm text-muted">{applicants.length} {applicants.length === 1 ? "freelancer has" : "freelancers have"} asked for this job. Assign it to one; the others are told it's taken.</p>
+            <ul className="space-y-3">
+              {applicants.map((a) => (
+                <li key={a.id} className="rounded-xl border border-line p-4">
+                  <div className="flex items-center gap-3">
+                    <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-sm font-bold uppercase text-white">{a.freelancer_name.slice(0, 1)}</span>
+                    <div className="min-w-0">
+                      <div className="font-semibold">{a.freelancer_name}</div>
+                      <div className="break-all text-xs text-muted">{a.freelancer_email}</div>
+                    </div>
+                  </div>
+                  <div className="my-3"><TrackRecord email={a.freelancer_email} /></div>
+                  <form action={assignFreelancer.bind(null, job.id, a.id)}>
+                    <SubmitButton full pending="Assigning…">Assign to {a.freelancer_name}</SubmitButton>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
 
       {(s === "in_progress" || s === "needs_revision" || s === "submitted") && (role === "freelancer" ? (
         <div className="space-y-4">
@@ -329,8 +368,8 @@ function NotYours({ taken, role }: { taken: boolean; role: string }) {
       <h1 className="text-2xl font-bold">{taken ? "This job has been taken" : "This job isn't available to you"}</h1>
       <p className="mt-2 text-muted">
         {taken
-          ? "Another freelancer accepted it. Only the client and that freelancer can open it now."
-          : "Only the client who posted it, and the freelancer who accepts it, can open this job."}
+          ? "The client assigned it to another freelancer. Only the client and that freelancer can open it now."
+          : "Only the client who posted it, and the freelancer it is assigned to, can open this job."}
       </p>
       <a href={role === "freelancer" ? "/work" : "/"} className="btn btn-primary mt-5">
         {role === "freelancer" ? "Find other work" : "Back to your jobs"}

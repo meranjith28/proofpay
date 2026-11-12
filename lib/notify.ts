@@ -5,7 +5,7 @@
  * or Zapier is down, the app carries on exactly as before.
  */
 export type NotifyEvent =
-  | "job_funded" | "job_accepted" | "work_paid" | "payment_received"
+  | "job_funded" | "job_requested" | "job_assigned" | "job_accepted" | "work_paid" | "payment_received"
   | "changes_needed" | "second_opinion_ready" | "job_refunded";
 
 export async function notify(

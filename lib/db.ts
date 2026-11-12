@@ -68,6 +68,16 @@ export async function migrate() {
   await sql`alter table submissions add column if not exists url text`;
   await sql`alter table submissions add column if not exists shot_desktop bytea`;
   await sql`alter table submissions add column if not exists shot_mobile bytea`;
+  // Freelancers ask for a job; the client picks one of them.
+  await sql`
+    create table if not exists job_requests (
+      id serial primary key,
+      job_id text not null references jobs(id),
+      freelancer_email text not null,
+      freelancer_name text not null,
+      created_at timestamptz not null default now(),
+      unique (job_id, freelancer_email)
+    )`;
   // Audit trail: every agent decision and payment action, shown on the job page.
   await sql`
     create table if not exists events (

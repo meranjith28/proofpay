@@ -58,7 +58,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
             <DemoButton icon={<IconBriefcase />} title="Continue as the demo client" text="Post a job, fund it with PayPal, watch it get verified" />
           </form>
           <form action={demoSignIn.bind(null, "freelancer")}>
-            <DemoButton icon={<IconWallet />} title="Continue as the demo freelancer" text="Accept a funded job, deliver, get paid on proof" />
+            <DemoButton icon={<IconWallet />} title="Continue as the demo freelancer" text="Request a funded job, deliver, get paid on proof" />
           </form>
         </div>
         <ul className="mt-auto space-y-2 pt-8 text-sm text-white/75">

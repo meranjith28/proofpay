@@ -27,6 +27,9 @@ export default async function FindWork({ searchParams }: { searchParams: Promise
     where freelancer_email is not null and status in ('in_progress','submitted','needs_revision','disputed')
     ${type ? sql`and category = ${type}` : sql``}
     order by updated_at desc limit 6`;
+  const asked = freelancer
+    ? new Set((await sql`select job_id from job_requests where lower(freelancer_email) = lower(${user!.email})`).map((r) => r.job_id as string))
+    : new Set<string>();
   const mine = freelancer ? await myJobs(user!) : null;
   const types = Object.entries(CATEGORY_LABELS) as [Category, string][];
 
@@ -49,14 +52,14 @@ export default async function FindWork({ searchParams }: { searchParams: Promise
             {!freelancer && (
               <p className="mt-4 text-sm text-white/80">
                 {user ? "You're signed in as a client. " : ""}
-                <a href="/login" className="font-semibold text-white underline underline-offset-4">Sign in as a freelancer</a> to accept jobs.
+                <a href="/login" className="font-semibold text-white underline underline-offset-4">Sign in as a freelancer</a> to request jobs.
               </p>
             )}
           </div>
           {freelancer && (
             <div className="rounded-2xl bg-white p-5 text-ink shadow-lift md:col-span-2">
               <h2 className="text-lg font-bold">Your track record</h2>
-              <p className="mb-3 text-sm text-muted">Clients see this when you accept their job.</p>
+              <p className="mb-3 text-sm text-muted">Clients see this when you request their job.</p>
               <TrackRecord email={user!.email} />
             </div>
           )}
@@ -102,9 +105,11 @@ export default async function FindWork({ searchParams }: { searchParams: Promise
                 <div className="mt-auto flex items-center justify-between pt-4">
                   <span className="inline-flex items-center gap-1.5 text-sm text-muted"><IconClock className="h-4 w-4" />{due(j.due_at) ? `Due ${due(j.due_at)}` : "No deadline"}</span>
                   {freelancer ? (
-                    <a href={`/jobs/${j.id}`} className="btn btn-primary px-3.5 py-2">View and accept <IconArrow className="h-4 w-4" /></a>
+                    asked.has(j.id)
+                      ? <a href={`/jobs/${j.id}`} className="btn btn-ghost px-3.5 py-2"><IconCheck className="h-4 w-4 text-verified" />Requested: waiting for the client</a>
+                      : <a href={`/jobs/${j.id}`} className="btn btn-primary px-3.5 py-2">View and request <IconArrow className="h-4 w-4" /></a>
                   ) : (
-                    <span className="text-sm text-muted">Freelancers can accept</span>
+                    <span className="text-sm text-muted">Freelancers can request</span>
                   )}
                 </div>
               </li>
@@ -114,12 +119,12 @@ export default async function FindWork({ searchParams }: { searchParams: Promise
 
         {taken.length > 0 && (
           <div>
-            <h2 className="mt-8 text-lg font-bold">Recently accepted</h2>
+            <h2 className="mt-8 text-lg font-bold">Recently assigned</h2>
             <ul className="mt-3 grid gap-3 md:grid-cols-3">
               {taken.map((j) => (
                 <li key={j.id} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-white/60 p-4 text-muted">
                   <span className="min-w-0 truncate">{j.title}</span>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">Accepted</span>
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">Assigned</span>
                 </li>
               ))}
             </ul>
@@ -132,7 +137,7 @@ export default async function FindWork({ searchParams }: { searchParams: Promise
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h2 className="text-2xl font-bold">Your work</h2>
-              <p className="mt-1 text-muted">Jobs you accepted, their checklist results and payouts.</p>
+              <p className="mt-1 text-muted">Jobs assigned to you, their checklist results and payouts.</p>
             </div>
             <dl className="flex gap-3">
               <div className="card px-4 py-2.5"><dt className="text-xs text-muted">Earned on proof</dt><dd className="num text-xl font-bold text-verified">${mine.totals.paid.toFixed(2)}</dd></div>
@@ -140,7 +145,7 @@ export default async function FindWork({ searchParams }: { searchParams: Promise
             </dl>
           </div>
           <div className="mt-5">
-            <JobsGrid rows={mine.rows} counterpartLabel="Client" emptyText="You haven't accepted a job yet. Pick one above." />
+            <JobsGrid rows={mine.rows} counterpartLabel="Client" emptyText="No jobs assigned to you yet. Request one above." />
           </div>
         </section>
       )}

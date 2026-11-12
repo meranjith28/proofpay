@@ -32,7 +32,7 @@ export async function myJobs(user: User): Promise<{ rows: JobRow[]; totals: { co
       statusLabel: LABELS[j.status] ?? j.status,
       due: j.due_at ? new Date(j.due_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" }) : null,
       overdue: isOverdue(j as never),
-      counterpart: (user.role === "client" ? j.freelancer_email : j.client_email) ?? "Not accepted yet",
+      counterpart: (user.role === "client" ? j.freelancer_email : j.client_email) ?? "Not assigned yet",
       checks: v ? `${v.filter((x) => x.passed).length} of ${items} passed` : `${items} ${items === 1 ? "item" : "items"}`,
       updated: new Date(j.updated_at).toISOString(),
     };

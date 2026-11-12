@@ -74,18 +74,51 @@ export async function fundJob(id: string) {
   redirect(approveUrl);
 }
 
-export async function acceptJob(id: string) {
+/** A freelancer asks for an open job. Several can ask; the client chooses one. */
+export async function requestJob(id: string) {
   await ready();
   const user = await requireUser("freelancer");
-  // Only one freelancer can win the job: the update succeeds only while it is still open.
-  const taken = await sql`update jobs set freelancer_email = ${user.email}, status = 'in_progress', updated_at = now()
+  const [j] = await sql`select title, client_email, amount from jobs where id = ${id} and status = 'funded' and freelancer_email is null`;
+  if (!j) redirect(`/work?error=${encodeURIComponent("This job is no longer open.")}`);
+  const added = await sql`insert into job_requests (job_id, freelancer_email, freelancer_name)
+            values (${id}, ${user.email}, ${user.name}) on conflict (job_id, freelancer_email) do nothing returning id`;
+  if (added.length) {
+    await logEvent(id, "freelancer", "job_requested", { text: `${user.name} asked to take this job` });
+    void notify("job_requested", { to: j.client_email, jobId: id, jobTitle: j.title, amount: Number(j.amount),
+      subject: `${user.name} wants to work on "${j.title}"`,
+      message: `${user.name} asked to take your job. Open the job to see their track record and assign it to them.` });
+  }
+  revalidatePath(`/jobs/${id}`);
+  revalidatePath("/work");
+}
+
+/** The freelancer changes their mind before the client has chosen. */
+export async function withdrawRequest(id: string) {
+  await ready();
+  const user = await requireUser("freelancer");
+  const gone = await sql`delete from job_requests where job_id = ${id} and lower(freelancer_email) = lower(${user.email}) returning id`;
+  if (gone.length) await logEvent(id, "freelancer", "request_withdrawn", { text: `${user.name} withdrew their request` });
+  revalidatePath(`/jobs/${id}`);
+  revalidatePath("/work");
+}
+
+/** The client picks one of the freelancers who asked. From here the job is private to the two of them. */
+export async function assignFreelancer(id: string, requestId: number) {
+  await ready();
+  const user = await requireUser("client");
+  const [job] = await sql`select * from jobs where id = ${id}`;
+  if (!job || !accessTo(job as never, user).isClient) throw new Error("Only the client who posted this job can assign it.");
+  const [req] = await sql`select * from job_requests where id = ${requestId} and job_id = ${id}`;
+  if (!req) redirect(`/jobs/${id}?error=${encodeURIComponent("That freelancer withdrew their request.")}`);
+  // Only one freelancer can get the job: the update succeeds only while it is still open.
+  const taken = await sql`update jobs set freelancer_email = ${req.freelancer_email}, status = 'in_progress', updated_at = now()
             where id = ${id} and status = 'funded' and freelancer_email is null returning id`;
-  if (taken.length === 0) redirect(`/work?error=${encodeURIComponent("Someone else accepted this job first.")}`);
-  await logEvent(id, "freelancer", "job_accepted", { text: `Accepted by ${user.name}` });
-  const [j] = await sql`select title, client_email, amount from jobs where id = ${id}`;
-  void notify("job_accepted", { to: j.client_email, jobId: id, jobTitle: j.title, amount: Number(j.amount),
-    subject: `${user.name} accepted "${j.title}"`,
-    message: `${user.name} accepted your job and is working on it. You'll get the checklist results as soon as they submit.` });
+  if (taken.length === 0) redirect(`/jobs/${id}?error=${encodeURIComponent("This job has already been assigned.")}`);
+  await sql`delete from job_requests where job_id = ${id}`;
+  await logEvent(id, "client", "job_assigned", { text: `Assigned to ${req.freelancer_name}` });
+  void notify("job_assigned", { to: req.freelancer_email, jobId: id, jobTitle: job.title, amount: Number(job.amount),
+    subject: `You got the job: "${job.title}"`,
+    message: `The client chose you. $${Number(job.amount).toFixed(2)} is held and is paid to your PayPal account when every checklist item passes. You can start now.` });
   revalidatePath(`/jobs/${id}`);
 }
 
@@ -93,7 +126,7 @@ export async function submitWork(id: string, form: FormData) {
   await ready();
   const user = await requireUser("freelancer");
   const [job] = await sql`select * from jobs where id = ${id}`;
-  if (!job || !accessTo(job as never, user).isFreelancer) redirect(`/work?error=${encodeURIComponent("Only the freelancer who accepted this job can submit work.")}`);
+  if (!job || !accessTo(job as never, user).isFreelancer) redirect(`/work?error=${encodeURIComponent("Only the freelancer assigned to this job can submit work.")}`);
   const note = String(form.get("note") ?? "");
   if (job.category === "website") return submitWebsite(job, String(form.get("url") ?? ""), note);
   const text = String(form.get("text") ?? "");
@@ -185,7 +218,7 @@ export async function refundJob(id: string) {
   const user = await requireUser("client");
   const [job] = await sql`select * from jobs where id = ${id}`;
   if (!job || !accessTo(job as never, user).isClient || !canRefund(job as never)) {
-    redirect(`/jobs/${id}?error=${encodeURIComponent("A refund is only possible before a freelancer accepts, or after a missed deadline.")}`);
+    redirect(`/jobs/${id}?error=${encodeURIComponent("A refund is only possible before a freelancer is assigned, or after a missed deadline.")}`);
   }
   await cancelAndRefund(id);
   revalidatePath(`/jobs/${id}`);
