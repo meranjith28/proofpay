@@ -1,16 +1,40 @@
 @import "tailwindcss";
 
-/* Always light theme, so text stays readable when the visitor's computer is in dark mode. */
-:root {
-  color-scheme: light;
+@theme {
+  --color-paper: #f4f6f9;
+  --color-ink: #13213a;
+  --color-muted: #5b6b82;
+  --color-line: #d9e0ea;
+  --color-held: #b7791f;
+  --color-held-soft: #fbf3e4;
+  --color-verified: #0f8a5f;
+  --color-verified-soft: #e6f5ee;
+  --color-action: #2448f5;
+  --color-danger: #c0392b;
+  --color-danger-soft: #fbeceb;
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Public Sans", ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Always light, so text stays readable when the visitor's computer is in dark mode. */
+:root { color-scheme: light; }
 
 body {
-  background: #f8fafc;
-  color: #0f172a;
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.55;
 }
 
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.01em; }
+
+:focus-visible { outline: 2px solid var(--color-action); outline-offset: 2px; }
+
 .input {
-  @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100;
+  @apply w-full rounded-md border border-line bg-white px-3 py-2 text-sm text-ink placeholder:text-slate-400 outline-none focus:border-action focus:ring-2 focus:ring-blue-100;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chip-move { transition: left 600ms cubic-bezier(.2,.8,.2,1); }
 }

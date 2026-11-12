@@ -3,6 +3,7 @@ import { z } from "zod";
 import { withModel, callOptions } from "./model";
 import { sql, logEvent } from "./db";
 import { payFreelancer, refundClient } from "./paypal";
+import { checkFunding, toolkitRefund } from "./paypal-toolkit";
 
 
 /**
@@ -15,8 +16,20 @@ export async function settleJob(jobId: string) {
   const [sub] = await sql`select * from submissions where job_id = ${jobId} order by id desc limit 1`;
   if (!job || !sub) throw new Error("Job or submission not found");
 
+  let fundingConfirmed = false;
+  async function verifyFunding() {
+    const result = await checkFunding(job.paypal_order_id, Number(job.amount));
+    fundingConfirmed = result.ok;
+    await logEvent(jobId, "agent", "funding_checked", {
+      text: `Checked via ${result.checked_via}: order ${result.order_status}, capture ${result.capture_status}, $${result.captured_amount.toFixed(2)} held`,
+      ...result,
+    });
+    return result;
+  }
+
   async function releasePayment({ note }: { note: string }) {
     if (sub.overall !== "pass") return { ok: false, error: "Refused: submission did not pass verification" };
+    if (!fundingConfirmed) return { ok: false, error: "Refused: call verify_funding first and confirm the money is captured" };
     const [fresh] = await sql`select payout_batch_id from jobs where id = ${jobId}`;
     if (fresh?.payout_batch_id) return { ok: false, error: "Already paid" };
     const payout = await payFreelancer(jobId, job.freelancer_email, Number(job.amount), note);
@@ -31,6 +44,13 @@ export async function settleJob(jobId: string) {
   }
 
   const tools = {
+    verify_funding: tool({
+      description:
+        "Check with PayPal (via the PayPal Agent Toolkit) that the client's payment for this job was captured in full. " +
+        "Must be called before release_payment.",
+      inputSchema: z.object({}),
+      execute: verifyFunding,
+    }),
     release_payment: tool({
       description: "Pay the freelancer via PayPal Payouts. Only valid when every checklist item passed.",
       inputSchema: z.object({ note: z.string().describe("Short note to the freelancer explaining the payment") }),
@@ -50,17 +70,21 @@ export async function settleJob(jobId: string) {
     model,
     ...callOptions(),
     tools,
-    stopWhen: stepCountIs(4),
+    stopWhen: stepCountIs(5),
     system:
-      "You are the settlement agent of an escrow platform. Based on the verification result, " +
-      "call exactly one tool: release_payment if overall is 'pass', otherwise request_revision " +
-      "with a specific, friendly list of the failed items. Then reply with one sentence summarising what you did.",
+      "You are the settlement agent of an escrow platform. If the verification overall is 'pass': first call " +
+      "verify_funding; if it returns ok, call release_payment; if not, do not pay and explain why. " +
+      "If overall is not 'pass', call request_revision with a specific, friendly list of the failed items. " +
+      "Then reply with one sentence summarising what you did.",
     prompt: `Job: ${job.title} ($${job.amount})\nVerification:\n${JSON.stringify({ overall: sub.overall, items: sub.verdict }, null, 2)}`,
     }));
   } catch (e) {
     // AI unavailable: apply the same rules directly so money never gets stuck.
     console.error("[agent] model unavailable, applying rules directly", e);
-    if (sub.overall === "pass") await releasePayment({ note: `Verified: ${job.title}` });
+    if (sub.overall === "pass") {
+      await verifyFunding().catch(() => undefined);
+      await releasePayment({ note: `Verified: ${job.title}` });
+    }
     else await requestRevision({ message: "Some checklist items did not pass. See the red items in the checklist." });
     await logEvent(jobId, "agent", "settlement_summary", { text: "Settled by platform rules (AI agent unavailable)." });
     return "fallback";
@@ -75,7 +99,13 @@ export async function cancelAndRefund(jobId: string) {
   const [job] = await sql`select * from jobs where id = ${jobId}`;
   if (!job?.paypal_capture_id) throw new Error("Nothing to refund");
   if (job.payout_batch_id) throw new Error("Freelancer already paid; cannot refund");
-  const refund = await refundClient(jobId, job.paypal_capture_id);
+  let refund;
+  try {
+    refund = await toolkitRefund(job.paypal_capture_id, `Refund for cancelled job: ${job.title}`);
+  } catch (e) {
+    console.error("[agent] toolkit refund failed, using REST", e);
+    refund = await refundClient(jobId, job.paypal_capture_id);
+  }
   await sql`update jobs set status = 'refunded', refund_id = ${refund.refundId}, updated_at = now() where id = ${jobId}`;
   await logEvent(jobId, "paypal", "refund_issued", refund);
 }

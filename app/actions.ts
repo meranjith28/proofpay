@@ -101,7 +101,7 @@ export async function submitWork(id: string, form: FormData) {
   }
   await sql`insert into submissions (job_id, note, file_name, file_text, verdict, overall)
             values (${id}, ${note}, ${file?.name ?? null}, ${fileText.slice(0, 100_000)}, ${sql.json(verdict.items as never)}, ${verdict.overall})`;
-  await logEvent(id, "agent", "verification_complete", { overall: verdict.overall, summary: verdict.summary });
+  await logEvent(id, "agent", "verification_complete", { overall: verdict.overall, summary: verdict.summary, measurements: verdict.measurements });
 
   try {
     await settleJob(id);

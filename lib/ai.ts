@@ -1,6 +1,7 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import { withModel, callOptions } from "./model";
+import { measureText } from "./textstats";
 import type { ChecklistItem } from "./db";
 
 
@@ -56,9 +57,15 @@ export async function verifySubmission(
   file?: { data: Uint8Array; mediaType: string },
 ) {
   console.log("[ai] verifying submission");
+  const measurements = !file && submissionText.trim() ? measureText(submissionText) : null;
   const intro =
     `Checklist:\n${JSON.stringify(checklist, null, 2)}\n\n` +
     `Freelancer note:\n${note || "(none)"}\n\n` +
+    (measurements
+      ? `Exact measurements of the submission, computed by code. These are facts: use them for every ` +
+        `count-based requirement instead of counting yourself, and quote them as evidence.\n` +
+        `${JSON.stringify(measurements, null, 2)}\n\n`
+      : "") +
     (file ? "The submission is the attached file." : `Submission content:\n<<<\n${submissionText.slice(0, 60_000)}\n>>>`);
   const { object } = await withModel((model) => generateObject({
     model,
@@ -81,5 +88,5 @@ export async function verifySubmission(
   console.log("[ai] verification done", object.overall);
   // Never trust the model's overall flag alone: recompute from item results.
   const allPassed = object.items.length === checklist.length && object.items.every((i) => i.passed);
-  return { ...object, overall: allPassed ? ("pass" as const) : ("needs_revision" as const) };
+  return { ...object, measurements, overall: allPassed ? ("pass" as const) : ("needs_revision" as const) };
 }

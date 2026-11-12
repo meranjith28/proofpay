@@ -1,7 +1,8 @@
 import postgres from "postgres";
 
 // One shared connection pool. Neon requires SSL.
-export const sql = postgres(process.env.DATABASE_URL ?? "", { ssl: "require", max: 5 });
+const url = process.env.DATABASE_URL ?? "";
+export const sql = postgres(url, { ssl: /@(localhost|127\.0\.0\.1)[:/]/.test(url) ? false : "require", max: 5 });
 
 export type JobStatus =
   | "draft"          // posted, checklist generated, awaiting funding

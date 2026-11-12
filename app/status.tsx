@@ -1,18 +1,18 @@
 const STYLES: Record<string, string> = {
   draft: "bg-slate-100 text-slate-700",
-  funding: "bg-amber-100 text-amber-800",
-  funded: "bg-blue-100 text-blue-800",
-  in_progress: "bg-indigo-100 text-indigo-800",
-  submitted: "bg-purple-100 text-purple-800",
-  needs_revision: "bg-orange-100 text-orange-800",
-  paid: "bg-green-100 text-green-800",
-  refunded: "bg-rose-100 text-rose-800",
+  funding: "bg-held-soft text-held",
+  funded: "bg-held-soft text-held",
+  in_progress: "bg-held-soft text-held",
+  submitted: "bg-blue-50 text-action",
+  needs_revision: "bg-danger-soft text-danger",
+  paid: "bg-verified-soft text-verified",
+  refunded: "bg-slate-100 text-slate-700",
 };
 const LABELS: Record<string, string> = {
-  draft: "Awaiting funding", funding: "Funding in progress", funded: "Funded — open for work",
-  in_progress: "In progress", submitted: "Under AI review", needs_revision: "Needs revision",
-  paid: "Verified & paid", refunded: "Refunded",
+  draft: "Waiting for funding", funding: "Funding in progress", funded: "Funded, waiting for a freelancer",
+  in_progress: "Work in progress", submitted: "Being checked", needs_revision: "Needs changes",
+  paid: "Verified and paid", refunded: "Refunded to client",
 };
 export function StatusBadge({ status }: { status: string }) {
-  return <span className={`rounded-full px-3 py-1 text-xs font-medium ${STYLES[status] ?? STYLES.draft}`}>{LABELS[status] ?? status}</span>;
+  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STYLES[status] ?? STYLES.draft}`}>{LABELS[status] ?? status}</span>;
 }

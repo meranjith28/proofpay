@@ -103,3 +103,11 @@ export async function refundClient(jobId: string, captureId: string) {
   });
   return { refundId: res.id, status: res.status };
 }
+
+/** Direct REST read of an order (backup for the toolkit's get_order). */
+export async function getOrder(orderId: string) {
+  return call<{
+    status: string;
+    purchase_units: { amount: { value: string }; payments?: { captures?: { id: string; status: string; amount: { value: string } }[] } }[];
+  }>(`/v2/checkout/orders/${orderId}`);
+}
