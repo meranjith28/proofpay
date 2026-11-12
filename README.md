@@ -30,7 +30,7 @@ Small freelance jobs (a product description, a short report, a logo, a script) r
 |Code|functions and classes defined, language, line counts, TODOs, tests and docstrings present|
 |Website (KERNEL)|opened in a KERNEL cloud browser: HTTP status, load time, title, headings, navigation, broken internal links, forms and fields, list items, images missing alt text, sideways scrolling and tiny text on a phone-sized screen, plus desktop and mobile screenshots shown on the job as proof|
 
-5. **Settlement agent moves the money.** If every item passed, the agent calls `verify\_funding` (PayPal Agent Toolkit `get\_order`) to confirm the capture, then `release\_payment` (PayPal Payouts). Otherwise it calls `request\_revision` with a specific list of what to fix.
+5. **Settlement agent moves the money.** If every item passed, the agent calls `verify\\\_funding` (PayPal Agent Toolkit `get\\\_order`) to confirm the capture, then `release\\\_payment` (PayPal Payouts). Otherwise it calls `request\\\_revision` with a specific list of what to fix.
 6. **Disputes get a second opinion.** If the check fails, the freelancer can ask for a second opinion: a different AI model re-checks the same submission independently. If it passes, the client makes the final call (approve and pay, or keep the rejection).
 7. **Ask the agent.** On each job, the client and freelancer can ask questions ("What do I still need to fix?", "Where is my money?"). The agent answers from the job record and can look up the live PayPal payment status via the Agent Toolkit. It can explain but never move money.
 8. **Notifications (Zapier).** Clients and freelancers get an email when a job is funded, accepted, paid, needs changes, gets a second opinion, or is refunded, sent through a Zapier webhook. Optional and best-effort: the app works the same without it.
@@ -43,9 +43,9 @@ Small freelance jobs (a product description, a short report, a logo, a script) r
 |Step|PayPal capability|
 |-|-|
 |Client funds the job|Orders API v2: create order, buyer approval, capture|
-|Agent confirms funds before paying|**PayPal Agent Toolkit** `get\_order` (Orders API as fallback)|
-|Freelancer is paid|**Payouts API**, one payout per job (`sender\_batch\_id` as duplicate guard)|
-|Job cancelled|**PayPal Agent Toolkit** `create\_refund` (Payments API as fallback)|
+|Agent confirms funds before paying|**PayPal Agent Toolkit** `get\\\_order` (Orders API as fallback)|
+|Freelancer is paid|**Payouts API**, one payout per job (`sender\\\_batch\\\_id` as duplicate guard)|
+|Job cancelled|**PayPal Agent Toolkit** `create\\\_refund` (Payments API as fallback)|
 
 ## How AI is used
 
@@ -54,9 +54,9 @@ Small freelance jobs (a product description, a short report, a logo, a script) r
 |Brief → checklist|Structured output: 2–10 objective requirements plus how each is checked|
 |Verification|Structured output: per-item pass/fail, reason, evidence; reads text, PDFs and images|
 |Brief coach|Structured output: uncheckable phrases with measurable rewrites, missing requirements, fair price range, improved brief|
-|Settlement|Tool-calling agent with `verify\_funding`, `release\_payment`, `request\_revision`|
+|Settlement|Tool-calling agent with `verify\\\_funding`, `release\\\_payment`, `request\\\_revision`|
 |Second opinion|Independent re-check by a different model, with the original file|
-|Ask the agent|Read-only tool-calling assistant with `check\_paypal\_payment` (Agent Toolkit)|
+|Ask the agent|Read-only tool-calling assistant with `check\\\_paypal\\\_payment` (Agent Toolkit)|
 
 Models: Google Gemini (`gemini-3.8-flash`, with automatic fallback to other Gemini models) and optionally Groq (`openai/gpt-oss-120b`, `llama-3.3-70b-versatile`) or Anthropic Claude, via the Vercel AI SDK. The provider chain is configured with environment variables.
 
@@ -64,10 +64,10 @@ Models: Google Gemini (`gemini-3.8-flash`, with automatic fallback to other Gemi
 
 The AI decides, but hard rules sit **in code, not in the prompt**:
 
-* **No payout without a full pass.** `release\_payment` refuses unless every checklist item passed. The overall result is recomputed from the item results, not taken from the model.
-* **No payout without confirmed funds.** `release\_payment` refuses until `verify\_funding` has confirmed the capture with PayPal.
-* **No double payment.** The payout status is re-read from the database before paying, and PayPal's `sender\_batch\_id` is unique per job.
-* **Spend cap.** No single payout above `MAX\_PAYOUT\_USD`.
+* **No payout without a full pass.** `release\\\_payment` refuses unless every checklist item passed. The overall result is recomputed from the item results, not taken from the model.
+* **No payout without confirmed funds.** `release\\\_payment` refuses until `verify\\\_funding` has confirmed the capture with PayPal.
+* **No double payment.** The payout status is re-read from the database before paying, and PayPal's `sender\\\_batch\\\_id` is unique per job.
+* **Spend cap.** No single payout above `MAX\\\_PAYOUT\\\_USD`.
 * **Prompt-injection resistant.** The verifier is told to ignore any instructions inside the submission.
 * **Money never gets stuck.** If the AI is unavailable at settlement, the same rules are applied directly, and the audit trail records it.
 * **Locked checklist.** The checklist is fixed when the job is posted, so neither side can move the goalposts.
@@ -126,8 +126,8 @@ You can also use the one-click **Continue as the demo client / demo freelancer**
 
 When PayPal asks you to log in to pay, use the **PayPal sandbox client** account:
 
-* Email: `payproof1@personal.example.com`
-* PayPal sandbox password: `QeK1l!C\&`
+* Email: `sb-kszla53855379@personal.example.com`
+* PayPal sandbox password: `7H)Z">q)`
 1. Open the live demo → **Sign in** as the client. Under **Start from a job type** click **Use this** on *Product description*, optionally click **Check my brief**, then **Post job and create checklist**.
 2. Click **Fund with PayPal** and pay with the PayPal sandbox client account above.
 3. In the second browser, sign in as the freelancer → **Find work** → open the job → **Accept job**.
@@ -162,20 +162,20 @@ Requirements: Node.js 20+, a Postgres database, a PayPal developer sandbox app (
 ```bash
 npm install
 cp env.example .env.local   # fill in the values
-npm run build \&\& npm start
+npm run build \\\&\\\& npm start
 ```
 
 |Variable|Purpose|
 |-|-|
-|`PAYPAL\_CLIENT\_ID`, `PAYPAL\_CLIENT\_SECRET`|Sandbox app credentials|
-|`PAYPAL\_ENV`|`sandbox`|
-|`APP\_URL`|Public URL, used for the PayPal return link|
-|`DATABASE\_URL`|Postgres connection string|
-|`GOOGLE\_GENERATIVE\_AI\_API\_KEY` / `GROQ\_API\_KEY` / `ANTHROPIC\_API\_KEY`|Any one or more|
-|`MAX\_PAYOUT\_USD`|Spend cap per payout (default 500)|
-|`SESSION\_SECRET`|Optional; signs login cookies (derived from the PayPal secret if unset)|
-|`KERNEL\_API\_KEY`|Enables Website jobs (KERNEL cloud browsers)|
-|`ZAPIER\_WEBHOOK\_URL`|Optional; Zapier Catch Hook URL for email notifications|
+|`PAYPAL\\\_CLIENT\\\_ID`, `PAYPAL\\\_CLIENT\\\_SECRET`|Sandbox app credentials|
+|`PAYPAL\\\_ENV`|`sandbox`|
+|`APP\\\_URL`|Public URL, used for the PayPal return link|
+|`DATABASE\\\_URL`|Postgres connection string|
+|`GOOGLE\\\_GENERATIVE\\\_AI\\\_API\\\_KEY` / `GROQ\\\_API\\\_KEY` / `ANTHROPIC\\\_API\\\_KEY`|Any one or more|
+|`MAX\\\_PAYOUT\\\_USD`|Spend cap per payout (default 500)|
+|`SESSION\\\_SECRET`|Optional; signs login cookies (derived from the PayPal secret if unset)|
+|`KERNEL\\\_API\\\_KEY`|Enables Website jobs (KERNEL cloud browsers)|
+|`ZAPIER\\\_WEBHOOK\\\_URL`|Optional; Zapier Catch Hook URL for email notifications|
 
 Tables are created automatically on first run.
 
