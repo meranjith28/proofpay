@@ -143,10 +143,10 @@ export default async function JobPage({ params, searchParams }: { params: Promis
 
         <div className="order-first space-y-6 md:order-none md:col-span-2">
           <NextStep job={job} revision={revision?.detail?.message} amount={amount} sample={sample}
-            role={access.isClient ? "client" : access.isFreelancer ? "freelancer" : "visitor"}
+            role={access.isClient ? "client" : access.isFreelancer || access.openForFreelancers ? "freelancer" : "visitor"}
             canDispute={job.status === "needs_revision" && sub?.reviewer === "primary"}
             passedCount={passedCount} total={items.length} />
-          <AskAgent jobId={job.id} role={access.isClient ? "client" : "freelancer"} />
+          {(access.isClient || access.isFreelancer) && <AskAgent jobId={job.id} role={access.isClient ? "client" : "freelancer"} />}
 
           <Card title="Payment record" subtitle="PayPal references for every money movement on this job.">
             <dl className="space-y-2 text-sm">
