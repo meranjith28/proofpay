@@ -6,6 +6,7 @@ import { sql, migrate, logEvent } from "@/lib/db";
 import { generateChecklist, verifySubmission } from "@/lib/ai";
 import { createFundingOrder } from "@/lib/paypal";
 import { settleJob, cancelAndRefund } from "@/lib/agent";
+import { canRefund } from "@/lib/rules";
 
 function friendly(e: unknown) {
   const msg = String((e as Error)?.message ?? e);
@@ -26,20 +27,26 @@ export async function postJob(form: FormData) {
   const brief = String(form.get("brief") ?? "").trim();
   const amount = Number(form.get("amount"));
   const clientEmail = String(form.get("client_email") ?? "").trim();
+  const categories = ["writing", "translation", "social", "design", "data", "code"] as const;
+  const rawCategory = String(form.get("category") ?? "writing");
+  const category = (categories as readonly string[]).includes(rawCategory) ? (rawCategory as (typeof categories)[number]) : "writing";
+  const dueRaw = String(form.get("due_date") ?? "").trim();
+  // A due date means "by the end of that day, India time".
+  const dueAt = dueRaw ? new Date(`${dueRaw}T23:59:59+05:30`) : null;
   if (!title || !brief || !(amount > 0) || !clientEmail) throw new Error("All fields are required");
 
   const id = randomUUID().slice(0, 8);
   let generated;
   try {
-    generated = await generateChecklist(title, brief);
+    generated = await generateChecklist(title, brief, category);
   } catch (e) {
     console.error(e);
     redirect(`/?error=${encodeURIComponent(friendly(e))}`);
   }
   const { items, work_brief } = generated;
-  await sql`insert into jobs (id, title, brief, amount, client_email, checklist)
-            values (${id}, ${title}, ${brief}, ${amount}, ${clientEmail}, ${sql.json({ items, work_brief } as never)})`;
-  await logEvent(id, "client", "job_posted", { amount });
+  await sql`insert into jobs (id, title, brief, amount, client_email, checklist, category, due_at)
+            values (${id}, ${title}, ${brief}, ${amount}, ${clientEmail}, ${sql.json({ items, work_brief } as never)}, ${category}, ${dueAt})`;
+  await logEvent(id, "client", "job_posted", { amount, category, text: dueAt ? `Due ${dueRaw}` : undefined });
   await logEvent(id, "agent", "checklist_generated", { count: items.length });
   redirect(`/jobs/${id}`);
 }
@@ -79,10 +86,10 @@ export async function submitWork(id: string, form: FormData) {
   const file = form.get("file") as File | null;
 
   let fileText = text;
-  let filePart: { data: Uint8Array; mediaType: string } | undefined;
+  let filePart: { data: Uint8Array; mediaType: string; name?: string } | undefined;
   if (file && file.size > 0) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    if (file.type === "application/pdf" || file.type.startsWith("image/")) filePart = { data: bytes, mediaType: file.type };
+    if (file.type === "application/pdf" || file.type.startsWith("image/")) filePart = { data: bytes, mediaType: file.type, name: file.name };
     else fileText = new TextDecoder().decode(bytes);
   }
   if (!filePart && !fileText.trim()) throw new Error("Upload a file or paste your work");
@@ -92,7 +99,7 @@ export async function submitWork(id: string, form: FormData) {
 
   let verdict;
   try {
-    verdict = await verifySubmission(job.checklist.items, fileText, note, filePart);
+    verdict = await verifySubmission(job.checklist.items, fileText, note, filePart, job.category ?? "writing");
   } catch (e) {
     console.error(e);
     await sql`update jobs set status = ${job.status}, updated_at = now() where id = ${id}`;
@@ -115,6 +122,10 @@ export async function submitWork(id: string, form: FormData) {
 
 export async function refundJob(id: string) {
   await ready();
+  const [job] = await sql`select * from jobs where id = ${id}`;
+  if (!job || !canRefund(job as never)) {
+    redirect(`/jobs/${id}?error=${encodeURIComponent("A refund is only possible before a freelancer accepts, or after a missed deadline.")}`);
+  }
   await cancelAndRefund(id);
   revalidatePath(`/jobs/${id}`);
 }

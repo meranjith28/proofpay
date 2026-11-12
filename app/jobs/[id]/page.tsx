@@ -4,15 +4,17 @@ import { fundJob, acceptJob, submitWork, refundJob } from "../../actions";
 import { StatusBadge } from "../../status";
 import { SubmitButton } from "../../submit-button";
 import { MoneyPath } from "../../money-path";
+import { TrackRecord } from "../../track-record";
+import { SampleFill } from "../../sample-fill";
+import { canRefund, isOverdue } from "@/lib/rules";
+import { CATEGORY_LABELS, templateFor } from "@/lib/templates";
+import type { Category } from "@/lib/measure";
 
 export const dynamic = "force-dynamic";
 
 type Item = { id: number; requirement: string; how_to_verify: string };
 type Verdict = { id: number; passed: boolean; evidence: string; reason: string };
-type Measurements = {
-  total_words: number; first_line_words: number; last_line_words: number; bullet_points: number; non_empty_lines: number;
-  paragraphs: { index: number; words: number; starts_with: string }[];
-};
+type Measurements = Record<string, unknown>;
 
 const STEPS = ["Posted", "Funded", "Accepted", "Submitted", "Paid"];
 function stepIndex(status: string) {
@@ -37,6 +39,10 @@ export default async function JobPage({ params, searchParams }: { params: Promis
   const amount = Number(job.amount);
   const step = stepIndex(job.status);
   const passedCount = verdicts.filter((v) => v.passed).length;
+  const overdue = isOverdue(job as never);
+  const dueText = job.due_at ? new Date(job.due_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium" }) : "";
+  const refundable = canRefund(job as never);
+  const sample = templateFor(job.category)?.sample;
 
   return (
     <div className="space-y-8">
@@ -44,12 +50,23 @@ export default async function JobPage({ params, searchParams }: { params: Promis
       {funding === "ok" && <Banner tone="verified">Payment captured. The money is held until the work passes the checklist.</Banner>}
       {funding === "error" && <Banner tone="danger">Funding did not complete. Try “Fund with PayPal” again.</Banner>}
       {funding === "cancelled" && <Banner tone="held">Funding was cancelled. Nothing was charged.</Banner>}
+      {overdue && ["in_progress", "needs_revision"].includes(job.status) && (
+        <Banner tone="danger">The deadline has passed without accepted work. The client can now cancel and get a refund, or wait for the delivery.</Banner>
+      )}
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <a href="/" className="text-sm text-muted hover:text-ink">All jobs</a>
           <h1 className="mt-1 text-3xl font-bold">{job.title}</h1>
-          <div className="mt-2"><StatusBadge status={job.status} /></div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <StatusBadge status={job.status} />
+            <span className="rounded-full border border-line bg-white px-2.5 py-0.5 text-xs font-medium">{CATEGORY_LABELS[job.category as Category] ?? "Writing"}</span>
+            {job.due_at && (
+              <span className={`text-xs ${overdue ? "font-semibold text-danger" : "text-muted"}`}>
+                {overdue ? "Overdue: was due " : "Due "}{dueText}
+              </span>
+            )}
+          </div>
         </div>
         <div className="text-right">
           <div className="text-3xl font-bold" style={{ fontFamily: "var(--font-display)" }}>${amount.toFixed(2)}</div>
@@ -77,7 +94,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
         <div className="space-y-6 md:col-span-3">
           <Card
             title="Acceptance checklist"
-            aside={verdicts.length ? `${passedCount} of ${items.length} passed` : `${items.length} items`}
+            aside={verdicts.length ? `${passedCount} of ${items.length} passed` : `${items.length} ${items.length === 1 ? "item" : "items"}`}
             subtitle="Written by AI from the brief. Payment is released only when every item passes."
           >
             <ol className="space-y-3">
@@ -109,29 +126,13 @@ export default async function JobPage({ params, searchParams }: { params: Promis
             </ol>
           </Card>
 
-          {measured && (
-            <Card title="Measured by code" subtitle="Exact counts handed to the AI as facts, so word and bullet limits are never guessed.">
-              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <Stat label="Total words" value={measured.total_words} />
-                <Stat label="First line words" value={measured.first_line_words} />
-                <Stat label="Bullet points" value={measured.bullet_points} />
-                <Stat label="Last line words" value={measured.last_line_words} />
-              </dl>
-              {measured.paragraphs?.length > 0 && (
-                <ul className="mt-4 space-y-1 text-sm text-muted">
-                  {measured.paragraphs.map((p) => (
-                    <li key={p.index}>Paragraph {p.index}: <span className="font-semibold text-ink">{p.words} words</span>, starts “{p.starts_with}{p.starts_with.length >= 60 ? "…" : ""}”</li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          )}
+          {measured && <MeasuredPanel m={measured} />}
 
           <Card title="Original brief"><p className="whitespace-pre-wrap text-sm">{job.brief}</p></Card>
         </div>
 
         <div className="order-first space-y-6 md:order-none md:col-span-2">
-          <NextStep job={job} revision={revision?.detail?.message} amount={amount} />
+          <NextStep job={job} revision={revision?.detail?.message} amount={amount} sample={sample} />
 
           <Card title="Payment record" subtitle="PayPal references for every money movement on this job.">
             <dl className="space-y-2 text-sm">
@@ -145,10 +146,19 @@ export default async function JobPage({ params, searchParams }: { params: Promis
             </dl>
           </Card>
 
-          {job.paypal_capture_id && !job.payout_batch_id && job.status !== "refunded" && (
-            <form action={refundJob.bind(null, job.id)}>
-              <SubmitButton variant="danger" pending="Refunding through PayPal…">Cancel job and refund the client</SubmitButton>
+          {refundable && (
+            <form action={refundJob.bind(null, job.id)} className="space-y-1">
+              <SubmitButton variant="danger" pending="Refunding through PayPal…">
+                {overdue && job.status !== "funded" ? "Deadline missed: refund the client" : "Cancel job and refund the client"}
+              </SubmitButton>
+              <p className="text-xs text-muted">Refunds are possible before a freelancer accepts, or after a missed deadline.</p>
             </form>
+          )}
+
+          {job.freelancer_email && (
+            <Card title="Freelancer track record" subtitle={job.freelancer_email}>
+              <TrackRecord email={job.freelancer_email} />
+            </Card>
           )}
 
           <Card title="Audit trail" subtitle="Who did what, and when (India time).">
@@ -173,7 +183,8 @@ export default async function JobPage({ params, searchParams }: { params: Promis
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function NextStep({ job, revision, amount }: { job: any; revision?: string; amount: number }) {
+function NextStep({ job, revision, amount, sample }: { job: any; revision?: string; amount: number; sample?: string }) {
+  const accept = ACCEPT[job.category as Category] ?? ACCEPT.writing;
   const turn = (who: string, tone: string) => <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${tone}`}>{who}</span>;
   return (
     <section className="rounded-xl border-2 border-ink bg-white p-5">
@@ -199,9 +210,14 @@ function NextStep({ job, revision, amount }: { job: any; revision?: string; amou
           {turn("Freelancer's turn", "bg-held text-white")}
           <h2 className="text-xl font-bold">{job.status === "needs_revision" ? "Fix and resubmit" : "Submit the work"}</h2>
           {revision && <div className="rounded-md bg-danger-soft p-3 text-sm">{revision}</div>}
-          <p className="text-sm text-muted">Paste the work below, or upload a PDF, image or text file.</p>
-          <textarea name="text" rows={6} className="input" placeholder="Paste your work here" />
-          <input name="file" type="file" accept=".pdf,.txt,.md,.csv,.json,.html,.js,.ts,.py,image/*" className="block w-full text-sm" aria-label="Upload a file" />
+          <p className="text-sm text-muted">{accept.hint}</p>
+          {accept.paste && (
+            <>
+              <textarea name="text" rows={6} className="input font-mono text-xs" placeholder={accept.placeholder} />
+              {sample && <SampleFill sample={sample} />}
+            </>
+          )}
+          <input name="file" type="file" accept={accept.files} className="block w-full text-sm" aria-label="Upload a file" />
           <input name="note" className="input" placeholder="Note to the reviewer (optional)" />
           <SubmitButton
             pending="Checking…"
@@ -226,6 +242,58 @@ function NextStep({ job, revision, amount }: { job: any; revision?: string; amou
         </div>
       )}
     </section>
+  );
+}
+
+const ACCEPT: Record<Category, { hint: string; paste: boolean; placeholder: string; files: string }> = {
+  writing: { hint: "Paste the text, or upload a PDF or text file.", paste: true, placeholder: "Paste your text here", files: ".pdf,.txt,.md,.doc,.docx" },
+  translation: { hint: "Paste the translation, or upload a text or PDF file.", paste: true, placeholder: "Paste the translation here", files: ".pdf,.txt,.md" },
+  social: { hint: "Paste all posts, one per paragraph or labelled Post 1, Post 2…", paste: true, placeholder: "Post 1: …", files: ".txt,.md" },
+  design: { hint: "Upload the image (PNG, JPG or WebP). Its size and format are measured exactly.", paste: false, placeholder: "", files: "image/png,image/jpeg,image/webp,image/gif" },
+  data: { hint: "Upload the CSV file, or paste the CSV text. Rows, columns, duplicates and empty cells are counted exactly.", paste: true, placeholder: "name,email,…", files: ".csv,.txt" },
+  code: { hint: "Upload the code file, or paste the code. Functions, tests and TODOs are detected exactly.", paste: true, placeholder: "def …", files: ".py,.js,.ts,.java,.go,.rb,.txt" },
+};
+
+const NICE: Record<string, string> = {
+  total_words: "Total words", first_line_words: "First line words", last_line_words: "Last line words", bullet_points: "Bullet points",
+  posts: "Posts", hashtags: "Hashtags", mentions: "Mentions", longest_line_characters: "Longest line (characters)", links: "Links",
+  width_px: "Width (px)", height_px: "Height (px)", file_type: "File type", is_square: "Square", file_size_kb: "File size (KB)",
+  transparent_background_supported: "Transparency", aspect_ratio: "Aspect ratio",
+  column_count: "Columns", data_row_count: "Data rows", duplicate_rows: "Duplicate rows", total_empty_cells: "Empty cells",
+  invalid_emails: "Invalid emails", rows_with_wrong_column_count: "Broken rows", header_row: "Header row",
+  language_guess: "Language", functions_defined: "Functions", classes_defined: "Classes", code_lines: "Code lines",
+  todo_or_fixme: "TODOs", has_tests: "Has tests", has_docstrings_or_jsdoc: "Has docstrings",
+};
+
+function show(v: unknown): string {
+  if (v === null || v === undefined) return "n/a";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "None";
+  return String(v);
+}
+
+/** Shows the exact, code-computed facts that were handed to the AI. */
+function MeasuredPanel({ m }: { m: Record<string, unknown> }) {
+  const keys = Object.keys(NICE).filter((k) => k in m);
+  const paragraphs = Array.isArray(m.paragraphs) ? (m.paragraphs as { index: number; words: number; starts_with: string }[]) : [];
+  return (
+    <Card title="Measured by code" subtitle="Exact facts handed to the AI, so counts, sizes and structure are never guessed.">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+        {keys.map((k) => (
+          <div key={k} className="min-w-0">
+            <dt className="text-xs text-muted">{NICE[k]}</dt>
+            <dd className="break-words font-semibold">{show(m[k])}</dd>
+          </div>
+        ))}
+      </dl>
+      {paragraphs.length > 0 && (
+        <ul className="mt-4 space-y-1 text-sm text-muted">
+          {paragraphs.map((p) => (
+            <li key={p.index}>Paragraph {p.index}: <span className="font-semibold text-ink">{p.words} words</span>, starts “{p.starts_with.replace(/\n/g, " ")}{p.starts_with.length >= 60 ? "…" : ""}”</li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 

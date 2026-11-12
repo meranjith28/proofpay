@@ -3,14 +3,15 @@ import { postJob } from "./actions";
 import { StatusBadge } from "./status";
 import { SubmitButton } from "./submit-button";
 import { MoneyPath } from "./money-path";
-import { DemoFill } from "./demo-fill";
+import { TemplatePicker } from "./template-picker";
+import { TEMPLATES, CATEGORY_LABELS } from "@/lib/templates";
 
 export const dynamic = "force-dynamic";
 
 const STEPS = [
   { title: "Client posts and funds", text: "The brief becomes a numbered acceptance checklist. The client pays through PayPal, and the money is held." },
-  { title: "Freelancer delivers", text: "The freelancer accepts the job and submits the work: pasted text, a PDF or an image." },
-  { title: "AI checks every item", text: "Each checklist item gets a pass or fail with quoted evidence. Counts are measured exactly by code, not guessed." },
+  { title: "Freelancer delivers", text: "Copy, a design, a cleaned spreadsheet, code or a translation: pasted, or uploaded as a file." },
+  { title: "AI checks every item", text: "Each item gets a pass or fail with evidence. Word counts, image sizes, CSV rows and code functions are measured exactly by code." },
   { title: "Money moves itself", text: "If every item passes, the agent confirms the funds with PayPal and pays the freelancer. If not, it lists what to fix." },
 ];
 
@@ -57,20 +58,29 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         </ol>
       </section>
 
+      <section>
+        <h2 className="text-2xl font-bold">What can you hire for?</h2>
+        <p className="mt-1 text-muted">Any job whose result can be checked against written requirements. Pick one to start from a ready-made brief.</p>
+        <div className="mt-5"><TemplatePicker templates={TEMPLATES} /></div>
+      </section>
+
       <section className="grid gap-10 md:grid-cols-5">
-        <form action={postJob} className="space-y-4 rounded-xl border border-line bg-white p-6 md:col-span-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="text-2xl font-bold">Post a job</h2>
-            <DemoFill />
-          </div>
+        <form id="post" action={postJob} className="space-y-4 rounded-xl border border-line bg-white p-6 md:col-span-3">
+          <h2 className="text-2xl font-bold">Post a job</h2>
+          <Field label="Job type">
+            <select name="category" className="input" defaultValue="writing">
+              {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </Field>
           <Field label="Job title"><input name="title" required className="input" placeholder="Market research summary on EV chargers in India" /></Field>
           <Field label="What should be delivered? Be specific: the AI turns this into the checklist">
             <textarea name="brief" required rows={6} className="input" placeholder="A 2-page summary covering market size, the top 5 players with market share, 3 key risks, and cited sources." />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Budget in USD"><input name="amount" type="number" min="1" max="500" step="0.01" required className="input" placeholder="25" /></Field>
-            <Field label="Your PayPal email (client)"><input name="client_email" type="email" required className="input" placeholder="you@example.com" /></Field>
+            <Field label="Due date (optional)"><input name="due_date" type="date" className="input" /></Field>
           </div>
+          <Field label="Your PayPal email"><input name="client_email" type="email" required className="input" placeholder="you@example.com" /></Field>
           <SubmitButton pending="Posting…" stages={["Reading your brief…", "Writing the acceptance checklist…", "Saving the job…"]}>
             Post job and create checklist
           </SubmitButton>
@@ -79,7 +89,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <div className="md:col-span-2">
           <h2 className="mb-3 text-2xl font-bold">Recent jobs</h2>
           {jobs.length === 0 ? (
-            <p className="text-sm text-muted">No jobs yet. Post one, or use “Fill in an example job”.</p>
+            <p className="text-sm text-muted">No jobs yet. Pick a job type above to post the first one.</p>
           ) : (
             <ul className="divide-y divide-line rounded-xl border border-line bg-white">
               {jobs.map((j) => (

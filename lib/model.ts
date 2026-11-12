@@ -53,9 +53,14 @@ export function callOptions() {
 }
 
 /** Run an AI call, falling back to the next model if one fails. */
-export async function withModel<T>(run: (model: LanguageModel) => Promise<T>): Promise<T> {
+export async function withModel<T>(
+  run: (model: LanguageModel) => Promise<T>,
+  opts: { needsFiles?: boolean } = {},
+): Promise<T> {
   let lastError: unknown = new Error("No AI provider key is configured");
-  for (const c of candidates()) {
+  // Groq models here read text only; images and PDFs go straight to Gemini or Claude.
+  const list = candidates().filter((c) => !(opts.needsFiles && c.provider === "groq"));
+  for (const c of list) {
     const started = Date.now();
     const name = `${c.provider}:${c.id}`;
     try {

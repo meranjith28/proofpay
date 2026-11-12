@@ -24,9 +24,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span aria-hidden className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-ink text-sm text-white">$</span>
               ProofPay
             </a>
-            <span className="rounded-full border border-held/40 bg-held-soft px-3 py-1 text-xs font-medium text-held">
-              PayPal sandbox: test money only
-            </span>
+            <nav className="flex items-center gap-5 text-sm font-medium">
+              <a href="/#post" className="hover:text-action">Post a job</a>
+              <a href="/work" className="hover:text-action">Find work</a>
+              <span className="hidden rounded-full border border-held/40 bg-held-soft px-3 py-1 text-xs font-medium text-held sm:inline">
+                PayPal sandbox: test money only
+              </span>
+            </nav>
           </div>
         </header>
         <main className="mx-auto max-w-6xl px-6 py-10">{children}</main>
