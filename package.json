@@ -11,6 +11,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.102",
     "@ai-sdk/google": "^4.0.117",
+    "@ai-sdk/groq": "^4.0.81",
     "@paypal/agent-toolkit": "^1.11.0",
     "ai": "^7.0.169",
     "next": "16.4.6",
