@@ -29,15 +29,15 @@ export function AskAgent({ jobId, role }: { jobId: string; role: "client" | "fre
   }
 
   return (
-    <section className="rounded-xl border border-line bg-white p-5">
+    <section className="card p-5 md:p-6">
       <h2 className="text-xl font-bold">Ask the agent</h2>
       <p className="mb-3 text-sm text-muted">Questions about this job, answered from its record and live PayPal status. It can explain, not move money.</p>
       {log.length > 0 && (
         <ol className="mb-3 space-y-3 text-sm" aria-live="polite">
           {log.map((m, i) => (
             <li key={i} className="space-y-1">
-              <p className="font-semibold">{m.q}</p>
-              <p className="rounded-md bg-paper p-3">{m.a}</p>
+              <p className="ml-auto w-fit max-w-[90%] rounded-xl rounded-tr-sm bg-ink px-3 py-2 text-white">{m.q}</p>
+              <p className="rounded-xl rounded-tl-sm bg-action-soft p-3">{m.a}</p>
             </li>
           ))}
         </ol>
@@ -45,12 +45,12 @@ export function AskAgent({ jobId, role }: { jobId: string; role: "client" | "fre
       <div className="mb-3 flex flex-wrap gap-2">
         {SUGGESTIONS[role].map((s) => (
           <button key={s} type="button" onClick={() => ask(s)} disabled={busy}
-            className="rounded-full border border-line px-3 py-1 text-xs hover:border-ink disabled:opacity-60">{s}</button>
+            className="rounded-full border border-line bg-paper px-3 py-1.5 text-xs font-medium transition-colors hover:border-action hover:text-action disabled:opacity-60">{s}</button>
         ))}
       </div>
       <form onSubmit={(e) => { e.preventDefault(); ask(q); }} className="flex gap-2">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask about this job" aria-label="Ask about this job" className="input" />
-        <button disabled={busy} className="shrink-0 rounded-md bg-ink px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">
+        <button disabled={busy} className="btn btn-dark shrink-0">
           {busy ? "Thinking…" : "Ask"}
         </button>
       </form>

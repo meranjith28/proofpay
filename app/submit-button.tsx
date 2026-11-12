@@ -11,11 +11,13 @@ export function SubmitButton({
   pending,
   stages,
   variant = "primary",
+  full = false,
 }: {
   children: React.ReactNode;
   pending: string;
   stages?: string[];
-  variant?: "primary" | "danger";
+  variant?: "primary" | "danger" | "ghost" | "light";
+  full?: boolean;
 }) {
   const { pending: busy } = useFormStatus();
   const [i, setI] = useState(0);
@@ -25,20 +27,19 @@ export function SubmitButton({
     return () => clearInterval(t);
   }, [busy, stages]);
 
-  const cls =
-    variant === "danger"
-      ? "border border-danger/40 bg-white text-danger hover:bg-danger-soft"
-      : "bg-action text-white hover:bg-blue-700";
+  const cls = { primary: "btn-primary", danger: "btn-danger", ghost: "btn-ghost", light: "btn-light" }[variant];
   return (
-    <div className="space-y-2">
-      <button type="submit" disabled={busy} className={`rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-70 ${cls}`}>
+    <div className="space-y-3">
+      <button type="submit" disabled={busy} className={`btn ${cls} ${full ? "w-full" : ""}`}>
+        {busy && <span className="spinner" aria-hidden />}
         {busy ? (stages?.[i] ?? pending) : children}
       </button>
       {busy && stages && (
-        <ol className="space-y-1 text-xs text-muted" aria-live="polite">
+        <ol className="space-y-1.5 rounded-lg bg-paper p-3 text-xs text-muted" aria-live="polite">
           {stages.map((s, k) => (
-            <li key={s} className={k < i ? "line-through opacity-60" : k === i ? "font-semibold text-ink" : ""}>
-              {s}
+            <li key={s} className={`flex items-center gap-2 ${k === i ? "font-semibold text-ink" : ""}`}>
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${k < i ? "bg-verified" : k === i ? "bg-action" : "bg-line"}`} />
+              <span className={k < i ? "text-verified" : ""}>{s}</span>
             </li>
           ))}
         </ol>

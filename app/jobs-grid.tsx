@@ -21,17 +21,17 @@ export type JobRow = {
 
 // Matches the app's colours and type so the grid feels native, not bolted on.
 const proofpayTheme = themeQuartz.withParams({
-  accentColor: "#2448f5",
+  accentColor: "#2347f5",
   backgroundColor: "#ffffff",
-  foregroundColor: "#13213a",
+  foregroundColor: "#0c1a30",
   borderColor: "#d9e0ea",
-  headerBackgroundColor: "#f4f6f9",
+  headerBackgroundColor: "#f3f5f9",
   headerTextColor: "#5b6b82",
   headerFontWeight: 600,
   fontFamily: "Public Sans, ui-sans-serif, system-ui, sans-serif",
   fontSize: 14,
   rowHoverColor: "#f4f6f9",
-  wrapperBorderRadius: 12,
+  wrapperBorderRadius: 16,
   rowBorder: { color: "#eef1f5" },
   spacing: 7,
 });
@@ -41,9 +41,9 @@ const STATUS_STYLE: Record<string, string> = {
   funding: "bg-held-soft text-held",
   funded: "bg-held-soft text-held",
   in_progress: "bg-held-soft text-held",
-  submitted: "bg-blue-50 text-action",
+  submitted: "bg-action-soft text-action",
   needs_revision: "bg-danger-soft text-danger",
-  disputed: "bg-blue-50 text-action",
+  disputed: "bg-action-soft text-action",
   paid: "bg-verified-soft text-verified",
   refunded: "bg-slate-100 text-slate-700",
 };
@@ -89,7 +89,7 @@ export function JobsGrid({ rows, counterpartLabel, emptyText }: { rows: JobRow[]
     [counterpartLabel],
   );
 
-  if (rows.length === 0) return <p className="rounded-xl border border-dashed border-line bg-white p-8 text-center text-muted">{emptyText}</p>;
+  if (rows.length === 0) return <p className="card border-dashed p-10 text-center text-muted">{emptyText}</p>;
 
   return (
     <div className="space-y-3">
@@ -100,14 +100,14 @@ export function JobsGrid({ rows, counterpartLabel, emptyText }: { rows: JobRow[]
         aria-label="Search your jobs"
         className="input max-w-xs"
       />
-      <div style={{ height: Math.min(52 + rows.length * 44, 540) }}>
+      <div className="shadow-card rounded-2xl" style={{ height: Math.min(54 + rows.length * 48, 560) }}>
         <AgGridReact<JobRow>
           theme={proofpayTheme}
           rowData={rows}
           columnDefs={cols}
           quickFilterText={quick}
           defaultColDef={{ sortable: true, resizable: true, suppressMovable: true }}
-          rowHeight={44}
+          rowHeight={48}
           headerHeight={48}
           tooltipShowDelay={300}
           getRowId={(p) => p.data.id}

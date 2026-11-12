@@ -4,7 +4,7 @@ import { freelancerStats } from "@/lib/stats";
 export async function TrackRecord({ email }: { email: string }) {
   const s = await freelancerStats(email);
   return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-2.5">
       <Item label="Jobs paid" value={String(s.paid)} />
       <Item label="Passed first try" value={s.firstTryRate === null ? "None yet" : `${s.firstTryRate}%`} />
       <Item label="Earned on ProofPay" value={`$${s.earned.toFixed(2)}`} />
@@ -14,9 +14,9 @@ export async function TrackRecord({ email }: { email: string }) {
 }
 function Item({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="rounded-xl bg-paper px-3.5 py-3">
       <dt className="text-xs text-muted">{label}</dt>
-      <dd className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{value}</dd>
+      <dd className="num mt-0.5 text-xl font-bold">{value}</dd>
     </div>
   );
 }

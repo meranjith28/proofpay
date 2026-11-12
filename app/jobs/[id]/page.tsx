@@ -11,6 +11,7 @@ import { SampleFill } from "../../sample-fill";
 import { canRefund, isOverdue } from "@/lib/rules";
 import { CATEGORY_LABELS, templateFor } from "@/lib/templates";
 import type { Category } from "@/lib/measure";
+import { CategoryIcon, IconCheck, IconX, IconClock } from "../../icons";
 
 export const dynamic = "force-dynamic";
 
@@ -63,40 +64,46 @@ export default async function JobPage({ params, searchParams }: { params: Promis
         <Banner tone="danger">The deadline has passed without accepted work. The client can now cancel and get a refund, or wait for the delivery.</Banner>
       )}
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <a href="/" className="text-sm text-muted hover:text-ink">All jobs</a>
-          <h1 className="mt-1 text-3xl font-bold">{job.title}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-            <StatusBadge status={job.status} />
-            <span className="rounded-full border border-line bg-white px-2.5 py-0.5 text-xs font-medium">{CATEGORY_LABELS[job.category as Category] ?? "Writing"}</span>
-            {job.due_at && (
-              <span className={`text-xs ${overdue ? "font-semibold text-danger" : "text-muted"}`}>
-                {overdue ? "Overdue: was due " : "Due "}{dueText}
-              </span>
-            )}
+      <section className="card overflow-hidden">
+        <div className="flex flex-wrap items-start justify-between gap-5 p-6 md:p-7">
+          <div className="flex min-w-0 gap-4">
+            <span className="icon-tile mt-1 h-12 w-12 max-sm:hidden"><CategoryIcon category={job.category} className="h-6 w-6" /></span>
+            <div className="min-w-0">
+              <a href={user.role === "freelancer" ? "/work" : "/"} className="text-sm font-medium text-muted hover:text-ink">
+                {user.role === "freelancer" ? "Find work" : "Your jobs"} <span aria-hidden>/</span> Job {job.id}
+              </a>
+              <h1 className="mt-1 text-3xl font-bold md:text-4xl">{job.title}</h1>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                <StatusBadge status={job.status} />
+                <span className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-semibold">{CATEGORY_LABELS[job.category as Category] ?? "Writing"}</span>
+                {job.due_at && (
+                  <span className={`inline-flex items-center gap-1 text-xs ${overdue ? "font-semibold text-danger" : "text-muted"}`}>
+                    <IconClock className="h-3.5 w-3.5" />{overdue ? "Overdue: was due " : "Due "}{dueText}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl bg-paper px-5 py-3 text-right">
+            <div className="text-xs font-medium text-muted">Job budget</div>
+            <div className="num text-3xl font-bold md:text-4xl">${amount.toFixed(2)}</div>
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-3xl font-bold" style={{ fontFamily: "var(--font-display)" }}>${amount.toFixed(2)}</div>
-          <div className="text-sm text-muted">Job {job.id}</div>
+        <div className="border-t border-line bg-gradient-to-b from-paper/60 to-white px-6 pb-6 pt-5 md:px-7">
+          <MoneyPath amount={amount} status={job.status} />
+          <ol className="mt-6 grid grid-cols-5 gap-2" aria-label="Job progress">
+            {STEPS.map((s, i) => {
+              const done = i < step || (i === step && job.status === "paid");
+              const current = i === step && job.status !== "paid";
+              return (
+                <li key={s} className="text-center">
+                  <div className={`h-1.5 rounded-full ${done ? "bg-verified" : current ? (job.status === "needs_revision" ? "bg-danger" : "bg-held") : "bg-line"}`} />
+                  <div className={`mt-2 text-xs ${current ? "font-bold text-ink" : done ? "font-medium text-verified" : "text-muted"}`}>{s}</div>
+                </li>
+              );
+            })}
+          </ol>
         </div>
-      </div>
-
-      <section className="rounded-xl border border-line bg-white p-6">
-        <MoneyPath amount={amount} status={job.status} />
-        <ol className="mt-6 grid grid-cols-5 gap-2" aria-label="Job progress">
-          {STEPS.map((s, i) => {
-            const done = i < step || (i === step && job.status === "paid");
-            const current = i === step && job.status !== "paid";
-            return (
-              <li key={s} className="text-center">
-                <div className={`h-1.5 rounded-full ${done ? "bg-verified" : current ? (job.status === "needs_revision" ? "bg-danger" : "bg-held") : "bg-line"}`} />
-                <div className={`mt-2 text-xs ${current ? "font-semibold text-ink" : done ? "text-verified" : "text-muted"}`}>{s}</div>
-              </li>
-            );
-          })}
-        </ol>
       </section>
 
       <div className="grid gap-8 md:grid-cols-5">
@@ -108,25 +115,30 @@ export default async function JobPage({ params, searchParams }: { params: Promis
               ? "Showing the independent second opinion, requested by the freelancer."
               : "Written by AI from the brief. Payment is released only when every item passes."}
           >
+            {verdicts.length > 0 && (
+              <div className="mb-4 h-2 overflow-hidden rounded-full bg-danger-soft" aria-hidden>
+                <div className="h-full rounded-full bg-verified" style={{ width: `${items.length ? (passedCount / items.length) * 100 : 0}%` }} />
+              </div>
+            )}
             <ol className="space-y-3">
               {items.map((it) => {
                 const v = verdicts.find((x) => x.id === it.id);
                 return (
-                  <li key={it.id} className="rounded-lg border border-line p-4">
+                  <li key={it.id} className={`rounded-xl border p-4 ${v ? (v.passed ? "border-verified/25" : "border-danger/30") : "border-line"}`}>
                     <div className="flex items-start gap-3">
                       <span
                         aria-label={v ? (v.passed ? "passed" : "failed") : `item ${it.id}`}
-                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${v ? (v.passed ? "bg-verified text-white" : "bg-danger text-white") : "bg-paper text-muted"}`}
+                        className={`num mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${v ? (v.passed ? "bg-verified text-white" : "bg-danger text-white") : "bg-paper text-muted"}`}
                       >
-                        {v ? (v.passed ? "✓" : "✗") : it.id}
+                        {v ? (v.passed ? <IconCheck className="h-4 w-4" /> : <IconX className="h-4 w-4" />) : it.id}
                       </span>
                       <div className="min-w-0">
-                        <div className="font-medium">{it.requirement}</div>
+                        <div className="font-semibold">{it.requirement}</div>
                         <div className="text-sm text-muted">How it is checked: {it.how_to_verify}</div>
                         {v && (
-                          <div className={`mt-2 rounded-md p-3 text-sm ${v.passed ? "bg-verified-soft" : "bg-danger-soft"}`}>
+                          <div className={`mt-3 rounded-lg p-3 text-sm ${v.passed ? "bg-verified-soft" : "bg-danger-soft"}`}>
                             {v.reason}
-                            {v.evidence && <div className="mt-1 text-muted">Evidence: “{v.evidence}”</div>}
+                            {v.evidence && <div className="mt-1.5 break-words font-mono text-xs text-muted">Evidence: “{v.evidence}”</div>}
                           </div>
                         )}
                       </div>
@@ -143,19 +155,19 @@ export default async function JobPage({ params, searchParams }: { params: Promis
               <div className="grid gap-4 sm:grid-cols-[3fr_1fr]">
                 <figure>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/submissions/${sub.id}/shot?view=desktop`} alt="Desktop screenshot of the submitted website" className="w-full rounded-md border border-line" />
+                  <img src={`/api/submissions/${sub.id}/shot?view=desktop`} alt="Desktop screenshot of the submitted website" className="w-full rounded-lg border border-line shadow-card" />
                   <figcaption className="mt-1 text-xs text-muted">Desktop, 1280 px</figcaption>
                 </figure>
                 <figure>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/submissions/${sub.id}/shot?view=mobile`} alt="Mobile screenshot of the submitted website" className="w-full rounded-md border border-line" />
+                  <img src={`/api/submissions/${sub.id}/shot?view=mobile`} alt="Mobile screenshot of the submitted website" className="w-full rounded-lg border border-line shadow-card" />
                   <figcaption className="mt-1 text-xs text-muted">Mobile, 390 px</figcaption>
                 </figure>
               </div>
             </Card>
           )}
 
-          <Card title="Original brief"><p className="whitespace-pre-wrap text-sm">{job.brief}</p></Card>
+          <Card title="Original brief"><p className="whitespace-pre-wrap text-sm leading-relaxed text-muted">{job.brief}</p></Card>
         </div>
 
         <div className="order-first space-y-6 md:order-none md:col-span-2">
@@ -166,7 +178,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
           {(access.isClient || access.isFreelancer) && <AskAgent jobId={job.id} role={access.isClient ? "client" : "freelancer"} />}
 
           <Card title="Payment record" subtitle="PayPal references for every money movement on this job.">
-            <dl className="space-y-2 text-sm">
+            <dl className="divide-y divide-line text-sm">
               <Row label="Client" value={job.client_email} />
               <Row label="Freelancer" value={job.freelancer_email ?? "Not accepted yet"} />
               <Row label="PayPal order" value={job.paypal_order_id ?? "Not created yet"} mono={!!job.paypal_order_id} />
@@ -193,12 +205,13 @@ export default async function JobPage({ params, searchParams }: { params: Promis
           )}
 
           <Card title="Audit trail" subtitle="Who did what, and when (India time).">
-            <ol className="space-y-3 text-sm">
+            <ol className="relative space-y-4 border-l-2 border-line pl-5 text-sm">
               {events.map((e) => (
-                <li key={e.id} className="flex gap-3">
-                  <span className={`h-fit w-20 shrink-0 rounded px-1.5 py-0.5 text-center text-xs font-medium ${ACTOR[e.actor] ?? ""}`}>{e.actor}</span>
+                <li key={e.id} className="relative">
+                  <span aria-hidden className={`absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-white ${DOT[e.actor] ?? "bg-line"}`} />
                   <span className="min-w-0">
-                    <span className="font-medium">{e.action.replaceAll("_", " ")}</span>
+                    <span className={`mr-2 rounded px-1.5 py-0.5 text-xs font-semibold capitalize ${ACTOR[e.actor] ?? ""}`}>{e.actor}</span>
+                    <span className="font-semibold">{(e.action.charAt(0).toUpperCase() + e.action.slice(1)).replaceAll("_", " ")}</span>
                     {e.detail?.text && <span className="block text-muted">{e.detail.text}</span>}
                     {e.detail?.summary && <span className="block text-muted">{e.detail.summary}</span>}
                     <span className="block text-xs text-muted">{IST(e.created_at)}</span>
@@ -216,13 +229,13 @@ export default async function JobPage({ params, searchParams }: { params: Promis
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function NextStep({ job, revision, amount, sample, sampleUrl, role, canDispute, passedCount, total }: { job: any; revision?: string; amount: number; sample?: string; sampleUrl?: string; role: "client" | "freelancer" | "visitor"; canDispute: boolean; passedCount: number; total: number }) {
   const accept = ACCEPT[job.category as Category] ?? ACCEPT.writing;
-  const turn = (who: string, tone: string) => <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${tone}`}>{who}</span>;
+  const turn = (who: string, tone: string) => <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${tone}`}>{who}</span>;
   const waiting = (who: string, title: string, text: string) => (
-    <div className="space-y-2">{turn(who, "bg-slate-200 text-slate-700")}<h2 className="text-xl font-bold">{title}</h2><p className="text-sm text-muted">{text}</p></div>
+    <div className="space-y-2">{turn(who, "bg-slate-200 text-slate-700")}<h2 className="text-2xl font-bold">{title}</h2><p className="text-sm text-muted">{text}</p></div>
   );
   const s = job.status;
   return (
-    <section className="rounded-xl border-2 border-ink bg-white p-5">
+    <section className="card border-t-4 border-t-action p-5 shadow-lift md:p-6">
       {(s === "draft" || s === "funding") && (role === "client" ? (
         <form action={fundJob.bind(null, job.id)} className="space-y-3">
           {turn("Your turn", "bg-ink text-white")}
@@ -246,7 +259,7 @@ function NextStep({ job, revision, amount, sample, sampleUrl, role, canDispute, 
           <form action={submitWork.bind(null, job.id)} className="space-y-3">
             {turn("Your turn", "bg-held text-white")}
             <h2 className="text-xl font-bold">{s === "needs_revision" ? "Fix and resubmit" : "Submit the work"}</h2>
-            {revision && <div className="rounded-md bg-danger-soft p-3 text-sm">{revision}</div>}
+            {revision && <div className="rounded-lg border border-danger/25 bg-danger-soft p-3 text-sm">{revision}</div>}
             <p className="text-sm text-muted">{accept.hint}</p>
             {accept.paste && (
               <>
@@ -260,7 +273,7 @@ function NextStep({ job, revision, amount, sample, sampleUrl, role, canDispute, 
                 {sampleUrl && <SampleFill sample={sampleUrl} field="url" label="Use the sample café website" />}
               </>
             ) : (
-              <input name="file" type="file" accept={accept.files} className="block w-full text-sm" aria-label="Upload a file" />
+              <input name="file" type="file" accept={accept.files} className="block w-full rounded-lg border border-dashed border-line bg-paper p-3 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-ink file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white" aria-label="Upload a file" />
             )}
             <input name="note" className="input" placeholder="Note to the reviewer (optional)" />
             <SubmitButton pending="Checking…" stages={job.category === "website"
@@ -295,7 +308,7 @@ function NextStep({ job, revision, amount, sample, sampleUrl, role, canDispute, 
       {s === "paid" && (
         <div className="space-y-2">
           {turn("Done", "bg-verified text-white")}
-          <h2 className="text-xl font-bold">Paid on proof</h2>
+          <h2 className="text-2xl font-bold">Paid on proof</h2>
           <p className="break-words text-sm">Every item passed. ${amount.toFixed(2)} was sent to <span className="break-all">{job.freelancer_email}</span> through PayPal Payouts.</p>
         </div>
       )}
@@ -312,14 +325,14 @@ function NextStep({ job, revision, amount, sample, sampleUrl, role, canDispute, 
 
 function NotYours({ taken, role }: { taken: boolean; role: string }) {
   return (
-    <div className="mx-auto max-w-xl rounded-xl border border-line bg-white p-8 text-center">
+    <div className="card mx-auto max-w-xl p-10 text-center">
       <h1 className="text-2xl font-bold">{taken ? "This job has been taken" : "This job isn't available to you"}</h1>
       <p className="mt-2 text-muted">
         {taken
           ? "Another freelancer accepted it. Only the client and that freelancer can open it now."
           : "Only the client who posted it, and the freelancer who accepts it, can open this job."}
       </p>
-      <a href={role === "freelancer" ? "/work" : "/"} className="mt-5 inline-block rounded-md bg-action px-4 py-2 text-sm font-semibold text-white">
+      <a href={role === "freelancer" ? "/work" : "/"} className="btn btn-primary mt-5">
         {role === "freelancer" ? "Find other work" : "Back to your jobs"}
       </a>
     </div>
@@ -363,11 +376,11 @@ function MeasuredPanel({ m }: { m: Record<string, unknown> }) {
   const paragraphs = Array.isArray(m.paragraphs) ? (m.paragraphs as { index: number; words: number; starts_with: string }[]) : [];
   return (
     <Card title="Measured by code" subtitle="Exact facts handed to the AI, so counts, sizes and structure are never guessed.">
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+      <dl className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {keys.map((k) => (
-          <div key={k} className="min-w-0">
+          <div key={k} className="min-w-0 rounded-xl bg-paper px-3 py-2.5">
             <dt className="text-xs text-muted">{NICE[k]}</dt>
-            <dd className="break-words font-semibold">{show(m[k])}</dd>
+            <dd className="break-words text-sm font-bold">{show(m[k])}</dd>
           </div>
         ))}
       </dl>
@@ -382,17 +395,18 @@ function MeasuredPanel({ m }: { m: Record<string, unknown> }) {
   );
 }
 
+const DOT: Record<string, string> = { client: "bg-ink", freelancer: "bg-held", agent: "bg-action", paypal: "bg-verified" };
 const ACTOR: Record<string, string> = {
   client: "bg-ink text-white", freelancer: "bg-held-soft text-held",
-  agent: "bg-blue-50 text-action", paypal: "bg-verified-soft text-verified",
+  agent: "bg-action-soft text-action", paypal: "bg-verified-soft text-verified",
 };
 
 function Card({ title, subtitle, aside, children }: { title: string; subtitle?: string; aside?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-white p-5">
-      <div className="flex items-baseline justify-between gap-3">
+    <section className="card p-5 md:p-6">
+      <div className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-bold">{title}</h2>
-        {aside && <span className="text-sm font-semibold text-muted">{aside}</span>}
+        {aside && <span className="num shrink-0 rounded-full bg-paper px-3 py-1 text-xs font-bold text-ink">{aside}</span>}
       </div>
       {subtitle && <p className="mb-4 text-sm text-muted">{subtitle}</p>}
       <div className={subtitle ? "" : "mt-3"}>{children}</div>
@@ -404,7 +418,7 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-3">
+    <div className="flex flex-col gap-0.5 py-2.5 first:pt-0 last:pb-0 sm:flex-row sm:justify-between sm:gap-3">
       <dt className="shrink-0 text-muted">{label}</dt>
       <dd className={`min-w-0 break-all sm:text-right ${mono ? "font-mono text-xs leading-5" : ""}`}>{value}</dd>
     </div>
@@ -412,5 +426,5 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 }
 function Banner({ tone, children }: { tone: "verified" | "danger" | "held"; children: React.ReactNode }) {
   const c = { verified: "bg-verified-soft border-verified/30", danger: "bg-danger-soft border-danger/30", held: "bg-held-soft border-held/30" }[tone];
-  return <div role="status" className={`rounded-md border p-3 text-sm ${c}`}>{children}</div>;
+  return <div role="status" className={`rounded-xl border p-4 text-sm font-medium ${c}`}>{children}</div>;
 }

@@ -1,5 +1,6 @@
 "use client";
 import type { Template } from "@/lib/templates";
+import { CategoryIcon } from "./icons";
 
 /** Job-type gallery: one click fills the post-a-job form with a realistic brief. */
 export function TemplatePicker({ templates }: { templates: Template[] }) {
@@ -17,20 +18,22 @@ export function TemplatePicker({ templates }: { templates: Template[] }) {
     document.querySelector<HTMLInputElement>('[name="title"]')?.focus({ preventScroll: true });
   }
   return (
-    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {templates.map((t) => (
         <li key={t.category}>
           <button
             type="button"
             onClick={() => use(t)}
-            className="group flex h-full w-full flex-col rounded-xl border border-line bg-white p-4 text-left hover:border-ink"
+            className="card group flex h-full w-full flex-col p-4 text-left transition-all hover:-translate-y-0.5 hover:border-action hover:shadow-lift"
           >
-            <span className="text-lg font-bold" style={{ fontFamily: "var(--font-display)" }}>{t.label}</span>
-            <span className="mt-1 text-sm text-muted">{t.blurb}</span>
-            <span className="mt-3 flex w-full items-center justify-between text-sm">
-              <span className="text-muted">Delivered as: {t.submitAs}</span>
-              <span className="shrink-0 whitespace-nowrap pl-3 font-semibold text-action group-hover:underline">Use this</span>
+            <span className="flex items-center justify-between">
+              <span className="icon-tile transition-colors group-hover:bg-action group-hover:text-white"><CategoryIcon category={t.category} /></span>
+              <span className="num text-sm font-bold text-muted">${t.amount}</span>
             </span>
+            <span className="mt-3 text-base font-bold" style={{ fontFamily: "var(--font-display)" }}>{t.label}</span>
+            <span className="mt-1 text-sm text-muted">{t.blurb}</span>
+            <span className="mt-3 border-t border-line pt-3 text-xs text-muted">Delivered as: {t.submitAs}</span>
+            <span className="mt-2 text-sm font-semibold text-action">Use this brief</span>
           </button>
         </li>
       ))}

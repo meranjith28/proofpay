@@ -49,11 +49,11 @@ export function BriefCoach() {
   }
 
   return (
-    <div className="rounded-lg border border-line bg-paper p-3">
+    <div className="rounded-xl border border-action/20 bg-action-soft/60 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">Not sure the AI can check your brief? Ask it first.</p>
+        <p className="text-sm"><span className="font-semibold">AI brief coach.</span> <span className="text-muted">Not sure the AI can check your brief? Ask it first.</span></p>
         <button type="button" onClick={check} disabled={busy}
-          className="rounded-md border border-ink bg-white px-3 py-1.5 text-sm font-semibold hover:bg-paper disabled:opacity-60">
+          className="btn btn-ghost px-3 py-1.5">
           {busy ? "Checking your brief…" : "Check my brief"}
         </button>
       </div>
@@ -80,7 +80,7 @@ export function BriefCoach() {
             </div>
           )}
           <p><span className="font-medium">Fair budget:</span> ${result.price_low}–${result.price_high}. <span className="text-muted">{result.price_reason}</span></p>
-          <div className="rounded-md border border-line bg-white p-3">
+          <div className="rounded-lg border border-line bg-white p-3">
             <p className="font-medium">Improved brief</p>
             <p className="mt-1 whitespace-pre-wrap">{result.improved_brief}</p>
             <button type="button" onClick={applyImproved} className="mt-2 text-sm font-semibold text-action underline underline-offset-4">

@@ -49,14 +49,6 @@ export async function migrate() {
   // Added on day 2: job type and optional deadline. Safe to run on existing tables.
   await sql`alter table jobs add column if not exists category text not null default 'writing'`;
   await sql`alter table jobs add column if not exists due_at timestamptz`;
-  // Disputes: the submission's original file is kept so a second reviewer can re-check it.
-  await sql`alter table submissions add column if not exists file_data bytea`;
-  await sql`alter table submissions add column if not exists file_type text`;
-  await sql`alter table submissions add column if not exists reviewer text not null default 'primary'`;
-  // Website jobs: the submitted link and the screenshots the agent took as proof.
-  await sql`alter table submissions add column if not exists url text`;
-  await sql`alter table submissions add column if not exists shot_desktop bytea`;
-  await sql`alter table submissions add column if not exists shot_mobile bytea`;
   await sql`
     create table if not exists submissions (
       id serial primary key,
@@ -68,6 +60,14 @@ export async function migrate() {
       overall text,
       created_at timestamptz not null default now()
     )`;
+  // Disputes: the submission's original file is kept so a second reviewer can re-check it.
+  await sql`alter table submissions add column if not exists file_data bytea`;
+  await sql`alter table submissions add column if not exists file_type text`;
+  await sql`alter table submissions add column if not exists reviewer text not null default 'primary'`;
+  // Website jobs: the submitted link and the screenshots the agent took as proof.
+  await sql`alter table submissions add column if not exists url text`;
+  await sql`alter table submissions add column if not exists shot_desktop bytea`;
+  await sql`alter table submissions add column if not exists shot_mobile bytea`;
   // Audit trail: every agent decision and payment action, shown on the job page.
   await sql`
     create table if not exists events (
