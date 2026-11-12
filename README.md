@@ -2,7 +2,7 @@
 
 **Freelance payments that release themselves.**
 
-ProofPay works for any job whose result can be checked against written requirements: copywriting, social media packs, logo and banner design, spreadsheet and data cleaning, small coding tasks and translations.
+ProofPay works for any job whose result can be checked against written requirements: copywriting, social media packs, logo and banner design, spreadsheet and data cleaning, small coding tasks, translations, and **websites**, which the agent opens and tests in a real cloud browser (KERNEL).
 
 Clients and freelancers each have their own account. The client funds a job through PayPal. An AI agent turns the brief into an acceptance checklist both sides can see, checks the delivered work item by item with quoted evidence, confirms the funds with PayPal, and pays the freelancer through PayPal Payouts the moment every item passes. If something is missing, the agent sends the work back with a list of what to fix.
 
@@ -28,11 +28,13 @@ Small freelance jobs (a product description, a short report, a logo, a script) r
 |Design|image format, width and height in pixels, aspect ratio, square, transparency, file size|
 |Data cleaning (CSV)|header row, columns, rows, duplicate rows, empty cells per column, invalid emails, date formats|
 |Code|functions and classes defined, language, line counts, TODOs, tests and docstrings present|
+|Website (KERNEL)|opened in a KERNEL cloud browser: HTTP status, load time, title, headings, navigation, broken internal links, forms and fields, list items, images missing alt text, sideways scrolling and tiny text on a phone-sized screen, plus desktop and mobile screenshots shown on the job as proof|
 
 5. **Settlement agent moves the money.** If every item passed, the agent calls `verify\_funding` (PayPal Agent Toolkit `get\_order`) to confirm the capture, then `release\_payment` (PayPal Payouts). Otherwise it calls `request\_revision` with a specific list of what to fix.
 6. **Disputes get a second opinion.** If the check fails, the freelancer can ask for a second opinion: a different AI model re-checks the same submission independently. If it passes, the client makes the final call (approve and pay, or keep the rejection).
 7. **Ask the agent.** On each job, the client and freelancer can ask questions ("What do I still need to fix?", "Where is my money?"). The agent answers from the job record and can look up the live PayPal payment status via the Agent Toolkit. It can explain but never move money.
-8. **Everything is on the record.** Each user's dashboard (built with **AG Grid**) lists their jobs with status, checklist results and deadlines. A money path shows where the money is (client, held, freelancer), and an audit trail logs every agent decision and PayPal movement with its reference IDs.
+8. **Notifications (Zapier).** Clients and freelancers get an email when a job is funded, accepted, paid, needs changes, gets a second opinion, or is refunded, sent through a Zapier webhook. Optional and best-effort: the app works the same without it.
+9. **Everything is on the record.** Each user's dashboard (built with **AG Grid**) lists their jobs with status, checklist results and deadlines. A money path shows where the money is (client, held, freelancer), and an audit trail logs every agent decision and PayPal movement with its reference IDs.
 
 **Fair refunds with deadlines.** The client can cancel and be refunded through PayPal before a freelancer accepts, or after a missed deadline, but not while a freelancer is working on time.
 
@@ -72,6 +74,15 @@ The AI decides, but hard rules sit **in code, not in the prompt**:
 * **Accounts and roles.** Only the client can fund, refund or decide a dispute; only the freelancer who accepted can submit. Accepting is atomic, so two freelancers can't win the same job. Passwords are hashed with scrypt and sessions are signed cookies.
 * **Payouts go to the accepted freelancer's account email**, never to an address typed at payout time.
 
+## Sponsor tools used
+
+|Tool|How ProofPay uses it|
+|-|-|
+|**KERNEL**|Cloud browsers for the Website job type: the agent opens the freelancer's site, measures it on desktop and mobile, and screenshots it as proof (`lib/website-check.ts`). All link checks run inside KERNEL's browser, never from our server.|
+|**Zapier**|Email notifications for every money and status change, through a Catch Hook → Gmail Zap (`lib/notify.ts`).|
+|**AG Grid**|Client and freelancer dashboards (`app/jobs-grid.tsx`).|
+|**Render**|Hosting for the live app.|
+
 ## Architecture
 
 ```
@@ -93,6 +104,9 @@ Key files:
 * `lib/rules.ts`, `lib/stats.ts`: refund rule, deadlines, freelancer track record
 * `lib/auth.ts`, `app/login/`: accounts, roles, sessions and job access rules
 * `lib/dashboard.ts`, `app/jobs-grid.tsx`: AG Grid dashboards
+* `lib/website-check.ts`: KERNEL cloud-browser website checks
+* `lib/notify.ts`: Zapier notifications
+* `public/samples/`: a sample café website (passes) and a flawed draft (fails) for trying the Website job type
 * `lib/agent.ts`: settlement agent and its guarded tools
 * `lib/paypal.ts`: Orders, Payouts and Refunds REST client
 * `lib/paypal-toolkit.ts`: PayPal Agent Toolkit integration
@@ -101,18 +115,28 @@ Key files:
 
 ## Try it (judges)
 
-Use the one-click demo accounts on the sign-in page. Open the demo freelancer in a second browser or a private window to see both sides at once.
+Two ready-made accounts are linked to PayPal sandbox accounts, so funding and payouts work end to end with test money. Open the freelancer in a second browser or a private window to see both sides at once.
 
-1. Open the live demo → **Sign in** → **Continue as the demo client**. Under **Start from a job type** click **Use this** on *Product description*, optionally click **Check my brief**, then **Post job and create checklist**.
-2. Click **Fund with PayPal** and log in to PayPal with the sandbox **client** account:
+|Role|ProofPay sign-in|Password|
+|-|-|-|
+|Client|`payproof1@personal.example.com`|`ranj28@jith`|
+|Freelancer|`payproof2@personal.example.com`|`ranj28@jith`|
 
-   * Email: `sb-kszla53855379@personal.example.com`
-   * Password: `7H)Z">q)`
-3. In the second browser, **Continue as the demo freelancer** → **Find work** → open the job → **Accept job**.
+You can also use the one-click **Continue as the demo client / demo freelancer** buttons on the sign-in page, which open the same two accounts.
+
+When PayPal asks you to log in to pay, use the **PayPal sandbox client** account:
+
+* Email: `payproof1@personal.example.com`
+* PayPal sandbox password: `QeK1l!C\&`
+1. Open the live demo → **Sign in** as the client. Under **Start from a job type** click **Use this** on *Product description*, optionally click **Check my brief**, then **Post job and create checklist**.
+2. Click **Fund with PayPal** and pay with the PayPal sandbox client account above.
+3. In the second browser, sign in as the freelancer → **Find work** → open the job → **Accept job**.
 4. Click **Paste the sample deliverable** (or paste the sample below) and click **Submit for checking**. Samples exist for every text-based job type; for the design job, upload any PNG or JPG.
-5. Watch the checklist turn green, the money path move to the freelancer, and the payout batch appear in the payment record.
+5. Watch the checklist turn green, the money path move to the freelancer, and the payout batch appear in the payment record. The freelancer can see the payout by logging in to sandbox.paypal.com as `payproof2@personal.example.com`.
 
 To see the revision path, submit the same text with one bullet deleted: item 3 fails and the agent asks for changes instead of paying.
+
+**Website job (KERNEL):** post a *Website or landing page* job, fund and accept it, then submit the sample site with **Use the sample café website**: `https://proofpay-szfp.onrender.com/samples/brew-and-bloom/index.html` (passes). To see a failure, submit the draft: `https://proofpay-szfp.onrender.com/samples/brew-and-bloom-draft/index.html` (missing name, only 3 menu items, no contact form, a broken link, and sideways scrolling on mobile). The job page shows the desktop and mobile screenshots the agent took.
 
 <details>
 <summary>Sample submission that passes</summary>
@@ -150,6 +174,8 @@ npm run build \&\& npm start
 |`GOOGLE\_GENERATIVE\_AI\_API\_KEY` / `GROQ\_API\_KEY` / `ANTHROPIC\_API\_KEY`|Any one or more|
 |`MAX\_PAYOUT\_USD`|Spend cap per payout (default 500)|
 |`SESSION\_SECRET`|Optional; signs login cookies (derived from the PayPal secret if unset)|
+|`KERNEL\_API\_KEY`|Enables Website jobs (KERNEL cloud browsers)|
+|`ZAPIER\_WEBHOOK\_URL`|Optional; Zapier Catch Hook URL for email notifications|
 
 Tables are created automatically on first run.
 

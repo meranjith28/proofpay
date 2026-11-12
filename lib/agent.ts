@@ -4,6 +4,7 @@ import { withModel, callOptions } from "./model";
 import { sql, logEvent } from "./db";
 import { payFreelancer, refundClient } from "./paypal";
 import { checkFunding, toolkitRefund } from "./paypal-toolkit";
+import { notify } from "./notify";
 
 
 /**
@@ -35,11 +36,21 @@ export async function settleJob(jobId: string) {
     const payout = await payFreelancer(jobId, job.freelancer_email, Number(job.amount), note);
     await sql`update jobs set status = 'paid', payout_batch_id = ${payout.batchId}, updated_at = now() where id = ${jobId}`;
     await logEvent(jobId, "paypal", "payout_sent", payout);
+    const amt = Number(job.amount);
+    void notify("payment_received", { to: job.freelancer_email, jobId, jobTitle: job.title, amount: amt,
+      subject: `You've been paid $${amt.toFixed(2)} for "${job.title}"`,
+      message: `Every checklist item passed. $${amt.toFixed(2)} was sent to your PayPal account through PayPal Payouts (batch ${payout.batchId}).` });
+    void notify("work_paid", { to: job.client_email, jobId, jobTitle: job.title, amount: amt,
+      subject: `Work verified and paid: "${job.title}"`,
+      message: `The delivered work passed all checklist items, and the freelancer has been paid $${amt.toFixed(2)} from your held funds.` });
     return { ok: true, ...payout };
   }
   async function requestRevision({ message }: { message: string }) {
     await sql`update jobs set status = 'needs_revision', updated_at = now() where id = ${jobId}`;
     await logEvent(jobId, "agent", "revision_requested", { message });
+    void notify("changes_needed", { to: job.freelancer_email, jobId, jobTitle: job.title,
+      subject: `Changes needed on "${job.title}"`,
+      message: `Your submission didn't pass every checklist item yet. Here's what to fix:\n\n${message}\n\nThink the check got it wrong? You can ask for a second opinion on the job page.` });
     return { ok: true };
   }
 
@@ -108,6 +119,11 @@ export async function cancelAndRefund(jobId: string) {
   }
   await sql`update jobs set status = 'refunded', refund_id = ${refund.refundId}, updated_at = now() where id = ${jobId}`;
   await logEvent(jobId, "paypal", "refund_issued", refund);
+  for (const to of [job.client_email, job.freelancer_email]) {
+    void notify("job_refunded", { to, jobId, jobTitle: job.title, amount: Number(job.amount),
+      subject: `Job cancelled and refunded: "${job.title}"`,
+      message: `The client cancelled this job and $${Number(job.amount).toFixed(2)} was refunded to the client's PayPal account.` });
+  }
 }
 
 /**

@@ -1,17 +1,17 @@
 "use client";
 
-/** Demo helper: pastes the template's sample deliverable into the submission box. */
-export function SampleFill({ sample }: { sample: string }) {
+/** Demo helper: fills the submission box (or the link field) with a sample deliverable. */
+export function SampleFill({ sample, field = "text", label = "Paste the sample deliverable" }: { sample: string; field?: string; label?: string }) {
   return (
     <button
       type="button"
       className="text-sm font-medium text-action underline underline-offset-4 hover:no-underline"
       onClick={() => {
-        const box = document.querySelector<HTMLTextAreaElement>('textarea[name="text"]');
+        const box = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${field}"]`);
         if (box) { box.value = sample; box.focus(); }
       }}
     >
-      Paste the sample deliverable
+      {label}
     </button>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, logEvent } from "@/lib/db";
 import { captureOrder } from "@/lib/paypal";
+import { notify } from "@/lib/notify";
 
 // PayPal sends the client back here after they approve the payment.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,6 +15,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (status !== "COMPLETED" || !captureId) throw new Error(`Capture status ${status}`);
     await sql`update jobs set status = 'funded', paypal_capture_id = ${captureId}, updated_at = now() where id = ${id}`;
     await logEvent(id, "paypal", "payment_captured", { captureId });
+    void notify("job_funded", { to: job.client_email, jobId: id, jobTitle: job.title, amount: Number(job.amount),
+      subject: `Funded: "${job.title}" is live`,
+      message: `We received $${Number(job.amount).toFixed(2)} through PayPal and are holding it. Your job is now on the Find work board, and the freelancer is paid only when every checklist item passes.` });
     return NextResponse.redirect(`${appUrl}/jobs/${id}?funding=ok`);
   } catch (e) {
     await logEvent(id, "paypal", "capture_failed", { error: String(e) });

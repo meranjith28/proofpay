@@ -5,7 +5,7 @@
  */
 import { measureText, countWords } from "./textstats";
 
-export type Category = "writing" | "translation" | "social" | "design" | "data" | "code";
+export type Category = "writing" | "translation" | "social" | "design" | "data" | "code" | "website";
 
 // ---------- text extras (writing, translation, social) ----------
 export function measureWriting(text: string) {
@@ -192,6 +192,10 @@ export const MEASURABLE: Record<Category, string> = {
   design: "image file type, width and height in pixels, aspect ratio, whether it is square, transparency support, file size",
   data: "header row, column count, data row count, duplicate rows, empty cells per column, invalid emails, date formats",
   code: "functions and classes defined, language, line counts, TODO count, presence of tests and docstrings",
+  website:
+    "opened in a real cloud browser (KERNEL): HTTP status, load time in ms, page title, headings, navigation links, broken internal links, " +
+    "forms and their fields, contact form present, list items, images missing alt text, sideways scrolling on a phone-sized screen, " +
+    "tiny text on mobile, visible text; plus desktop and mobile screenshots",
 };
 
 export { countWords };

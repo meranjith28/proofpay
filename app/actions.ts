@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
 import { sql, migrate, logEvent } from "@/lib/db";
-import { generateChecklist, verifySubmission } from "@/lib/ai";
+import { generateChecklist, verifySubmission, verifyWebsite } from "@/lib/ai";
+import { checkWebsite, kernelConfigured, normaliseUrl } from "@/lib/website-check";
+import { notify } from "@/lib/notify";
 import { createFundingOrder } from "@/lib/paypal";
 import { settleJob, cancelAndRefund } from "@/lib/agent";
 import { canRefund } from "@/lib/rules";
@@ -29,7 +31,7 @@ export async function postJob(form: FormData) {
   const brief = String(form.get("brief") ?? "").trim();
   const amount = Number(form.get("amount"));
   const clientEmail = user.email;
-  const categories = ["writing", "translation", "social", "design", "data", "code"] as const;
+  const categories = ["writing", "translation", "social", "design", "data", "code", "website"] as const;
   const rawCategory = String(form.get("category") ?? "writing");
   const category = (categories as readonly string[]).includes(rawCategory) ? (rawCategory as (typeof categories)[number]) : "writing";
   const dueRaw = String(form.get("due_date") ?? "").trim();
@@ -80,6 +82,10 @@ export async function acceptJob(id: string) {
             where id = ${id} and status = 'funded' and freelancer_email is null returning id`;
   if (taken.length === 0) redirect(`/work?error=${encodeURIComponent("Someone else accepted this job first.")}`);
   await logEvent(id, "freelancer", "job_accepted", { text: `Accepted by ${user.name}` });
+  const [j] = await sql`select title, client_email, amount from jobs where id = ${id}`;
+  void notify("job_accepted", { to: j.client_email, jobId: id, jobTitle: j.title, amount: Number(j.amount),
+    subject: `${user.name} accepted "${j.title}"`,
+    message: `${user.name} accepted your job and is working on it. You'll get the checklist results as soon as they submit.` });
   revalidatePath(`/jobs/${id}`);
 }
 
@@ -89,6 +95,7 @@ export async function submitWork(id: string, form: FormData) {
   const [job] = await sql`select * from jobs where id = ${id}`;
   if (!job || !accessTo(job as never, user).isFreelancer) redirect(`/work?error=${encodeURIComponent("Only the freelancer who accepted this job can submit work.")}`);
   const note = String(form.get("note") ?? "");
+  if (job.category === "website") return submitWebsite(job, String(form.get("url") ?? ""), note);
   const text = String(form.get("text") ?? "");
   const file = form.get("file") as File | null;
 
@@ -128,6 +135,51 @@ export async function submitWork(id: string, form: FormData) {
   revalidatePath(`/jobs/${id}`);
 }
 
+/** Website jobs: the agent opens the site in a KERNEL cloud browser, measures it, screenshots it, then judges. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function submitWebsite(job: any, rawUrl: string, note: string) {
+  const id = job.id as string;
+  let url: string;
+  try {
+    url = normaliseUrl(rawUrl);
+  } catch {
+    redirect(`/jobs/${id}?error=${encodeURIComponent("Enter the full link to the live site, starting with https://")}`);
+  }
+  if (!kernelConfigured()) {
+    redirect(`/jobs/${id}?error=${encodeURIComponent("Website checking isn't switched on yet (KERNEL key missing). Ask the platform owner.")}`);
+  }
+  await sql`update jobs set status = 'submitted', updated_at = now() where id = ${id}`;
+  await logEvent(id, "freelancer", "work_submitted", { text: `Site: ${url}` });
+
+  let check, verdict;
+  try {
+    check = await checkWebsite(url);
+    await logEvent(id, "agent", "website_opened", {
+      text: `Opened in a KERNEL cloud browser: HTTP ${check.facts.http_status}, loaded in ${check.facts.load_time_ms} ms, ${check.facts.broken_links.length} broken links`,
+    });
+    verdict = await verifyWebsite(job.checklist.items, check.facts, { desktop: check.desktopShot, mobile: check.mobileShot }, note);
+  } catch (e) {
+    console.error(e);
+    await sql`update jobs set status = ${job.status}, updated_at = now() where id = ${id}`;
+    const msg = /timeout|net::|ERR_|navigat/i.test(String((e as Error)?.message)) ? "The site couldn't be opened. Check the link is public and online, then try again." : friendly(e);
+    await logEvent(id, "agent", "verification_failed", { summary: msg });
+    redirect(`/jobs/${id}?error=${encodeURIComponent(msg)}`);
+  }
+  const { visible_text_excerpt, ...factsForRecord } = check.facts;
+  await sql`insert into submissions (job_id, note, file_text, verdict, overall, url, shot_desktop, shot_mobile)
+            values (${id}, ${note}, ${visible_text_excerpt}, ${sql.json(verdict.items as never)}, ${verdict.overall},
+                    ${url}, ${Buffer.from(check.desktopShot)}, ${Buffer.from(check.mobileShot)})`;
+  await logEvent(id, "agent", "verification_complete", { overall: verdict.overall, summary: verdict.summary, measurements: factsForRecord });
+  try {
+    await settleJob(id);
+  } catch (e) {
+    console.error(e);
+    await logEvent(id, "agent", "settlement_failed", { summary: friendly(e) });
+    redirect(`/jobs/${id}?error=${encodeURIComponent(friendly(e))}`);
+  }
+  revalidatePath(`/jobs/${id}`);
+}
+
 export async function refundJob(id: string) {
   await ready();
   const user = await requireUser("client");
@@ -154,18 +206,33 @@ export async function requestSecondOpinion(id: string) {
   await logEvent(id, "freelancer", "second_opinion_requested", {});
   const filePart = sub.file_data ? { data: new Uint8Array(sub.file_data), mediaType: sub.file_type } : undefined;
   let verdict;
+  let shots: { desktop: Uint8Array; mobile: Uint8Array } | null = null;
   try {
-    verdict = await verifySubmission(job.checklist.items, sub.file_text ?? "", sub.note ?? "", filePart, job.category ?? "writing", true);
+    if (job.category === "website" && sub.url) {
+      // Re-open the live site so the second reviewer sees it fresh.
+      const check = await checkWebsite(sub.url);
+      shots = { desktop: check.desktopShot, mobile: check.mobileShot };
+      const { visible_text_excerpt: _t, ...facts } = check.facts;
+      void _t;
+      verdict = await verifyWebsite(job.checklist.items, check.facts, shots, sub.note ?? "", true);
+      verdict = { ...verdict, measurements: facts };
+    } else {
+      verdict = await verifySubmission(job.checklist.items, sub.file_text ?? "", sub.note ?? "", filePart, job.category ?? "writing", true);
+    }
   } catch (e) {
     console.error(e);
     redirect(`/jobs/${id}?error=${encodeURIComponent(friendly(e))}`);
   }
-  await sql`insert into submissions (job_id, note, file_name, file_text, verdict, overall, file_data, file_type, reviewer)
+  await sql`insert into submissions (job_id, note, file_name, file_text, verdict, overall, file_data, file_type, reviewer, url, shot_desktop, shot_mobile)
             values (${id}, ${sub.note}, ${sub.file_name}, ${sub.file_text}, ${sql.json(verdict.items as never)}, ${verdict.overall},
-                    ${sub.file_data}, ${sub.file_type}, 'second_opinion')`;
+                    ${sub.file_data}, ${sub.file_type}, 'second_opinion', ${sub.url ?? null},
+                    ${shots ? Buffer.from(shots.desktop) : sub.shot_desktop ?? null}, ${shots ? Buffer.from(shots.mobile) : sub.shot_mobile ?? null})`;
   if (verdict.overall === "pass") {
     await sql`update jobs set status = 'disputed', updated_at = now() where id = ${id}`;
     await logEvent(id, "agent", "second_opinion_passed", { summary: `${verdict.summary} The client now decides whether to pay.`, measurements: verdict.measurements });
+    void notify("second_opinion_ready", { to: job.client_email, jobId: id, jobTitle: job.title, amount: Number(job.amount),
+      subject: `Your decision needed: second opinion passed "${job.title}"`,
+      message: "The freelancer disputed a failed check, and an independent AI reviewer found every item met. Please approve the payment or keep the rejection." });
   } else {
     await logEvent(id, "agent", "second_opinion_agreed", { summary: `The second reviewer also found missing items. ${verdict.summary}`, measurements: verdict.measurements });
   }

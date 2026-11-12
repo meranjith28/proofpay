@@ -18,6 +18,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   design: "Design",
   data: "Data cleaning",
   code: "Code",
+  website: "Website",
 };
 
 export const TEMPLATES: Template[] = [
@@ -96,6 +97,18 @@ def test_is_valid_pin():
     assert not is_valid_pin("012345")
     assert not is_valid_pin("60001A")
     assert not is_valid_pin("6000011")`,
+  },
+  {
+    category: "website",
+    label: "Website or landing page",
+    blurb: "Opened and tested in a real cloud browser",
+    title: "One-page website for a café",
+    brief:
+      'Build a one-page website for "Brew & Bloom", a café in Chennai, and send the live link. It must have: the name Brew & Bloom in the page header, ' +
+      "a menu section listing at least 5 items with prices, a contact form with name, email and message fields, no broken links, " +
+      "no sideways scrolling on a phone, and it must load in under 3 seconds.",
+    amount: 60,
+    submitAs: "Link to the live site",
   },
   {
     category: "design",

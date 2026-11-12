@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brew &amp; Bloom — café in Chennai</title>
+<style>
+  :root { --cream:#f7f1e4; --brown:#4a2e20; --sage:#7a9a6c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Georgia, "Times New Roman", serif; background: var(--cream); color: var(--brown); line-height: 1.6; }
+  header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:18px 6vw; border-bottom:2px solid var(--brown); }
+  header h1 { margin:0; font-size:1.8rem; }
+  nav a { color: var(--brown); margin-left: 18px; font-family: Arial, sans-serif; font-size: .95rem; }
+  .hero { padding: 56px 6vw 32px; max-width: 900px; }
+  .hero p { font-size: 1.2rem; }
+  section { padding: 24px 6vw; max-width: 900px; }
+  h2 { color: var(--sage); border-bottom: 1px solid var(--sage); padding-bottom: 4px; }
+  ul.menu { list-style:none; padding:0; display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 32px; }
+  ul.menu li { display:flex; justify-content:space-between; border-bottom: 1px dotted var(--brown); padding: 6px 0; font-family: Arial, sans-serif; }
+  form { display:grid; gap: 12px; max-width: 480px; font-family: Arial, sans-serif; }
+  label { display:grid; gap: 4px; font-size: .95rem; }
+  input, textarea { font: inherit; padding: 10px; border: 1px solid var(--brown); border-radius: 6px; background: #fff; width: 100%; }
+  button { justify-self:start; padding: 10px 20px; background: var(--brown); color: var(--cream); border: 0; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+  footer { padding: 24px 6vw; font-family: Arial, sans-serif; font-size: .9rem; color: var(--sage); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Brew &amp; Bloom</h1>
+  <nav aria-label="Main">
+    <a href="#menu">Menu</a>
+    <a href="about.html">About</a>
+    <a href="#contact">Contact</a>
+  </nav>
+</header>
+<div class="hero">
+  <p>Filter coffee, cold brew and a garden to sit in. Opening 1 December in Besant Nagar, Chennai.</p>
+</div>
+<section id="menu">
+  <h2>Menu</h2>
+  <ul class="menu">
+    <li><span>Filter coffee</span><span>₹80</span></li>
+    <li><span>Cold brew</span><span>₹160</span></li>
+    <li><span>Cardamom latte</span><span>₹180</span></li>
+    <li><span>Rose milk tea</span><span>₹140</span></li>
+    <li><span>Banana walnut bread</span><span>₹120</span></li>
+    <li><span>Masala cheese toast</span><span>₹150</span></li>
+  </ul>
+</section>
+<section id="contact">
+  <h2>Contact us</h2>
+  <form action="#contact" method="post" onsubmit="event.preventDefault(); this.querySelector('button').textContent='Thanks! We will reply soon.';">
+    <label>Name <input name="name" required autocomplete="name"></label>
+    <label>Email <input name="email" type="email" required autocomplete="email"></label>
+    <label>Message <textarea name="message" rows="4" required></textarea></label>
+    <button type="submit">Send message</button>
+  </form>
+</section>
+<footer>Brew &amp; Bloom · 12 Beach Road, Besant Nagar, Chennai · Sample site for the ProofPay demo</footer>
+</body>
+</html>

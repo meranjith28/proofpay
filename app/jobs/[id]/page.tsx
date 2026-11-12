@@ -51,6 +51,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
   const dueText = job.due_at ? new Date(job.due_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium" }) : "";
   const refundable = access.isClient && canRefund(job as never);
   const sample = templateFor(job.category)?.sample;
+  const sampleUrl = job.category === "website" ? `${process.env.APP_URL ?? ""}/samples/brew-and-bloom/index.html` : undefined;
 
   return (
     <div className="space-y-8">
@@ -137,12 +138,28 @@ export default async function JobPage({ params, searchParams }: { params: Promis
           </Card>
 
           {measured && <MeasuredPanel m={measured} />}
+          {sub?.shot_desktop && (
+            <Card title="What the agent saw" subtitle={`Screenshots taken in a KERNEL cloud browser${sub.url ? ` of ${sub.url}` : ""}.`}>
+              <div className="grid gap-4 sm:grid-cols-[3fr_1fr]">
+                <figure>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/submissions/${sub.id}/shot?view=desktop`} alt="Desktop screenshot of the submitted website" className="w-full rounded-md border border-line" />
+                  <figcaption className="mt-1 text-xs text-muted">Desktop, 1280 px</figcaption>
+                </figure>
+                <figure>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/submissions/${sub.id}/shot?view=mobile`} alt="Mobile screenshot of the submitted website" className="w-full rounded-md border border-line" />
+                  <figcaption className="mt-1 text-xs text-muted">Mobile, 390 px</figcaption>
+                </figure>
+              </div>
+            </Card>
+          )}
 
           <Card title="Original brief"><p className="whitespace-pre-wrap text-sm">{job.brief}</p></Card>
         </div>
 
         <div className="order-first space-y-6 md:order-none md:col-span-2">
-          <NextStep job={job} revision={revision?.detail?.message} amount={amount} sample={sample}
+          <NextStep job={job} revision={revision?.detail?.message} amount={amount} sample={sample} sampleUrl={sampleUrl}
             role={access.isClient ? "client" : access.isFreelancer || access.openForFreelancers ? "freelancer" : "visitor"}
             canDispute={job.status === "needs_revision" && sub?.reviewer === "primary"}
             passedCount={passedCount} total={items.length} />
@@ -197,7 +214,7 @@ export default async function JobPage({ params, searchParams }: { params: Promis
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function NextStep({ job, revision, amount, sample, role, canDispute, passedCount, total }: { job: any; revision?: string; amount: number; sample?: string; role: "client" | "freelancer" | "visitor"; canDispute: boolean; passedCount: number; total: number }) {
+function NextStep({ job, revision, amount, sample, sampleUrl, role, canDispute, passedCount, total }: { job: any; revision?: string; amount: number; sample?: string; sampleUrl?: string; role: "client" | "freelancer" | "visitor"; canDispute: boolean; passedCount: number; total: number }) {
   const accept = ACCEPT[job.category as Category] ?? ACCEPT.writing;
   const turn = (who: string, tone: string) => <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${tone}`}>{who}</span>;
   const waiting = (who: string, title: string, text: string) => (
@@ -237,9 +254,18 @@ function NextStep({ job, revision, amount, sample, role, canDispute, passedCount
                 {sample && <SampleFill sample={sample} />}
               </>
             )}
-            <input name="file" type="file" accept={accept.files} className="block w-full text-sm" aria-label="Upload a file" />
+            {job.category === "website" ? (
+              <>
+                <input name="url" type="url" required className="input" placeholder="https://your-site.example.com" aria-label="Link to the live site" />
+                {sampleUrl && <SampleFill sample={sampleUrl} field="url" label="Use the sample café website" />}
+              </>
+            ) : (
+              <input name="file" type="file" accept={accept.files} className="block w-full text-sm" aria-label="Upload a file" />
+            )}
             <input name="note" className="input" placeholder="Note to the reviewer (optional)" />
-            <SubmitButton pending="Checking…" stages={["Measuring the work exactly…", "Checking each checklist item…", "Confirming funds with PayPal…", "Settling the payment…"]}>
+            <SubmitButton pending="Checking…" stages={job.category === "website"
+              ? ["Starting a cloud browser (KERNEL)…", "Opening the site on desktop and mobile…", "Checking each checklist item…", "Confirming funds with PayPal…", "Settling the payment…"]
+              : ["Measuring the work exactly…", "Checking each checklist item…", "Confirming funds with PayPal…", "Settling the payment…"]}>
               Submit for checking
             </SubmitButton>
           </form>
@@ -307,6 +333,7 @@ const ACCEPT: Record<Category, { hint: string; paste: boolean; placeholder: stri
   design: { hint: "Upload the image (PNG, JPG or WebP). Its size and format are measured exactly.", paste: false, placeholder: "", files: "image/png,image/jpeg,image/webp,image/gif" },
   data: { hint: "Upload the CSV file, or paste the CSV text. Rows, columns, duplicates and empty cells are counted exactly.", paste: true, placeholder: "name,email,…", files: ".csv,.txt" },
   code: { hint: "Upload the code file, or paste the code. Functions, tests and TODOs are detected exactly.", paste: true, placeholder: "def …", files: ".py,.js,.ts,.java,.go,.rb,.txt" },
+  website: { hint: "Paste the link to the live site. The agent opens it in a real cloud browser (KERNEL), tests it on desktop and mobile, and takes screenshots as proof.", paste: false, placeholder: "", files: "" },
 };
 
 const NICE: Record<string, string> = {
@@ -318,6 +345,9 @@ const NICE: Record<string, string> = {
   invalid_emails: "Invalid emails", rows_with_wrong_column_count: "Broken rows", header_row: "Header row",
   language_guess: "Language", functions_defined: "Functions", classes_defined: "Classes", code_lines: "Code lines",
   todo_or_fixme: "TODOs", has_tests: "Has tests", has_docstrings_or_jsdoc: "Has docstrings",
+  http_status: "HTTP status", load_time_ms: "Load time (ms)", page_title: "Page title", has_contact_form: "Contact form",
+  list_items_total: "List items", broken_links: "Broken links", images_missing_alt: "Images missing alt text",
+  mobile_horizontal_scroll: "Sideways scroll on phone", mobile_font_too_small: "Tiny text on phone", nav_links: "Navigation",
 };
 
 function show(v: unknown): string {

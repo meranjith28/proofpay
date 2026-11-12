@@ -81,6 +81,6 @@ export function accessTo(
 
 /** Demo accounts linked to the PayPal sandbox accounts, for judges and the video. */
 export const DEMO = {
-  client: { email: "sb-kszla53855379@personal.example.com", name: "Demo client" },
-  freelancer: { email: "sb-20twj53855622@personal.example.com", name: "Demo freelancer" },
+  client: { email: "payproof1@personal.example.com", name: "Demo client" },
+  freelancer: { email: "payproof2@personal.example.com", name: "Demo freelancer" },
 } as const;

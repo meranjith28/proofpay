@@ -53,6 +53,10 @@ export async function migrate() {
   await sql`alter table submissions add column if not exists file_data bytea`;
   await sql`alter table submissions add column if not exists file_type text`;
   await sql`alter table submissions add column if not exists reviewer text not null default 'primary'`;
+  // Website jobs: the submitted link and the screenshots the agent took as proof.
+  await sql`alter table submissions add column if not exists url text`;
+  await sql`alter table submissions add column if not exists shot_desktop bytea`;
+  await sql`alter table submissions add column if not exists shot_mobile bytea`;
   await sql`
     create table if not exists submissions (
       id serial primary key,
