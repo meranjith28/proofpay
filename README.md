@@ -2,11 +2,13 @@
 
 **Freelance payments that release themselves.**
 
+ProofPay works for any job whose result can be checked against written requirements: copywriting, social media packs, logo and banner design, spreadsheet and data cleaning, small coding tasks and translations.
+
 The client funds a job through PayPal. An AI agent turns the brief into an acceptance checklist both sides can see, checks the delivered work item by item with quoted evidence, confirms the funds with PayPal, and pays the freelancer through PayPal Payouts the moment every item passes. If something is missing, the agent sends the work back with a list of what to fix.
 
 **Live demo:** https://proofpay-szfp.onrender.com (PayPal sandbox, test money only. On the free tier the first load can take up to a minute.)
 
-\---
+---
 
 ## The problem
 
@@ -14,31 +16,39 @@ Small freelance jobs (a product description, a short report, a logo, a script) r
 
 ## What ProofPay does
 
-1. **Client posts a job.** The AI converts the free-text brief into a numbered checklist of objective, checkable requirements, each with a note on how it will be checked.
+1. **Client posts a job.** Pick a job type (or start from a ready-made brief), set a budget and an optional due date. The AI converts the brief into a numbered checklist of objective, checkable requirements, each with a note on how it will be checked.
 2. **Client funds it with PayPal.** The PayPal order is captured and the money is held by the platform.
-3. **Freelancer accepts and submits.** Paste text, or upload a PDF, image or text file.
-4. **AI verifies.** Each checklist item gets pass or fail, a one-line reason and quoted evidence. Word counts, bullet counts and line counts are **measured exactly by code** and handed to the model as facts, so limits are never guessed.
-5. **Settlement agent moves the money.** If every item passed, the agent calls `verify\\\_funding` (PayPal Agent Toolkit `get\\\_order`) to confirm the capture, then `release\\\_payment` (PayPal Payouts). Otherwise it calls `request\\\_revision` with a specific list of what to fix.
+3. **Freelancer finds work and submits.** The **Find work** board lists funded jobs by type, with the checklist visible up front and the freelancer's track record (jobs paid, first-try pass rate, earnings). Work is pasted or uploaded: text, PDF, image, CSV or code.
+4. **AI verifies.** Each checklist item gets pass or fail, a one-line reason and quoted evidence. Facts are **measured exactly by code** for each job type and handed to the model, so limits are never guessed:
+
+   | Job type | Measured by code |
+   |---|---|
+   | Writing, translation | words (total, per paragraph, first and last line), bullets, lines, links |
+   | Social media | posts, hashtags, mentions, emojis, longest line in characters |
+   | Design | image format, width and height in pixels, aspect ratio, square, transparency, file size |
+   | Data cleaning (CSV) | header row, columns, rows, duplicate rows, empty cells per column, invalid emails, date formats |
+   | Code | functions and classes defined, language, line counts, TODOs, tests and docstrings present |
+5. **Settlement agent moves the money.** If every item passed, the agent calls `verify_funding` (PayPal Agent Toolkit `get_order`) to confirm the capture, then `release_payment` (PayPal Payouts). Otherwise it calls `request_revision` with a specific list of what to fix.
 6. **Everything is on the record.** A money path shows where the money is (client, held, freelancer), and an audit trail logs every agent decision and PayPal movement with its reference IDs.
 
-The client can cancel a funded job at any point before payout and is refunded through PayPal.
+**Fair refunds with deadlines.** The client can cancel and be refunded through PayPal before a freelancer accepts, or after a missed deadline, but not while a freelancer is working on time.
 
 ## How PayPal is used
 
-|Step|PayPal capability|
-|-|-|
-|Client funds the job|Orders API v2: create order, buyer approval, capture|
-|Agent confirms funds before paying|**PayPal Agent Toolkit** `get\\\_order` (Orders API as fallback)|
-|Freelancer is paid|**Payouts API**, one payout per job (`sender\\\_batch\\\_id` as duplicate guard)|
-|Job cancelled|**PayPal Agent Toolkit** `create\\\_refund` (Payments API as fallback)|
+| Step | PayPal capability |
+|---|---|
+| Client funds the job | Orders API v2: create order, buyer approval, capture |
+| Agent confirms funds before paying | **PayPal Agent Toolkit** `get_order` (Orders API as fallback) |
+| Freelancer is paid | **Payouts API**, one payout per job (`sender_batch_id` as duplicate guard) |
+| Job cancelled | **PayPal Agent Toolkit** `create_refund` (Payments API as fallback) |
 
 ## How AI is used
 
-|Step|Model work|
-|-|-|
-|Brief → checklist|Structured output: 2–10 objective requirements plus how each is checked|
-|Verification|Structured output: per-item pass/fail, reason, evidence; reads text, PDFs and images|
-|Settlement|Tool-calling agent with `verify\\\_funding`, `release\\\_payment`, `request\\\_revision`|
+| Step | Model work |
+|---|---|
+| Brief → checklist | Structured output: 2–10 objective requirements plus how each is checked |
+| Verification | Structured output: per-item pass/fail, reason, evidence; reads text, PDFs and images |
+| Settlement | Tool-calling agent with `verify_funding`, `release_payment`, `request_revision` |
 
 Models: Google Gemini (`gemini-3.8-flash`, with automatic fallback to other Gemini models) and optionally Groq (`openai/gpt-oss-120b`, `llama-3.3-70b-versatile`) or Anthropic Claude, via the Vercel AI SDK. The provider chain is configured with environment variables.
 
@@ -46,13 +56,13 @@ Models: Google Gemini (`gemini-3.8-flash`, with automatic fallback to other Gemi
 
 The AI decides, but hard rules sit **in code, not in the prompt**:
 
-* **No payout without a full pass.** `release\\\_payment` refuses unless every checklist item passed. The overall result is recomputed from the item results, not taken from the model.
-* **No payout without confirmed funds.** `release\\\_payment` refuses until `verify\\\_funding` has confirmed the capture with PayPal.
-* **No double payment.** The payout status is re-read from the database before paying, and PayPal's `sender\\\_batch\\\_id` is unique per job.
-* **Spend cap.** No single payout above `MAX\\\_PAYOUT\\\_USD`.
-* **Prompt-injection resistant.** The verifier is told to ignore any instructions inside the submission.
-* **Money never gets stuck.** If the AI is unavailable at settlement, the same rules are applied directly, and the audit trail records it.
-* **Locked checklist.** The checklist is fixed when the job is posted, so neither side can move the goalposts.
+- **No payout without a full pass.** `release_payment` refuses unless every checklist item passed. The overall result is recomputed from the item results, not taken from the model.
+- **No payout without confirmed funds.** `release_payment` refuses until `verify_funding` has confirmed the capture with PayPal.
+- **No double payment.** The payout status is re-read from the database before paying, and PayPal's `sender_batch_id` is unique per job.
+- **Spend cap.** No single payout above `MAX_PAYOUT_USD`.
+- **Prompt-injection resistant.** The verifier is told to ignore any instructions inside the submission.
+- **Money never gets stuck.** If the AI is unavailable at settlement, the same rules are applied directly, and the audit trail records it.
+- **Locked checklist.** The checklist is fixed when the job is posted, so neither side can move the goalposts.
 
 ## Architecture
 
@@ -69,23 +79,24 @@ Next.js app on Render ── Postgres (Neon): jobs, submissions, events
 
 Key files:
 
-* `lib/ai.ts`: checklist generation and verification
-* `lib/textstats.ts`: exact text measurements
-* `lib/agent.ts`: settlement agent and its guarded tools
-* `lib/paypal.ts`: Orders, Payouts and Refunds REST client
-* `lib/paypal-toolkit.ts`: PayPal Agent Toolkit integration
-* `lib/model.ts`: model provider chain, timeouts and fallback
-* `app/`: pages, server actions and the PayPal return route
+- `lib/ai.ts`: checklist generation and verification
+- `lib/measure.ts`, `lib/textstats.ts`: exact measurements for text, CSV, code and images
+- `lib/templates.ts`: job types and ready-made briefs
+- `lib/rules.ts`, `lib/stats.ts`: refund rule, deadlines, freelancer track record
+- `lib/agent.ts`: settlement agent and its guarded tools
+- `lib/paypal.ts`: Orders, Payouts and Refunds REST client
+- `lib/paypal-toolkit.ts`: PayPal Agent Toolkit integration
+- `lib/model.ts`: model provider chain, timeouts and fallback
+- `app/`: pages, server actions and the PayPal return route
 
 ## Try it (judges)
 
-1. Open the live demo and click **Fill in an example job**, then **Post job and create checklist**.
+1. Open the live demo. Under **What can you hire for?** click **Use this** on *Product description* (or any other type), then **Post job and create checklist**.
 2. Click **Fund with PayPal** and log in with the sandbox **client** account:
-
-   * Email: `sb-kszla53855379@personal.example.com`
-   * Password: `7H)Z">q)`
+   - Email: `sb-kszla53855379@personal.example.com`
+   - Password: `<SANDBOX_CLIENT_PASSWORD>`
 3. Back on the job, accept it as the freelancer with `sb-20twj53855622@personal.example.com`.
-4. Paste the sample submission below and click **Submit for checking**.
+4. Click **Paste the sample deliverable** (or paste the sample below) and click **Submit for checking**. Samples exist for every text-based job type; for the design job, upload any PNG or JPG.
 5. Watch the checklist turn green, the money path move to the freelancer, and the payout batch appear in the payment record.
 
 To see the revision path, submit the same text with one bullet deleted: item 3 fails and the agent asks for changes instead of paying.
@@ -104,7 +115,6 @@ HydraSmart is the water bottle that thinks ahead so you don't have to. Built fro
 
 Order your HydraSmart today and make every sip count.
 ```
-
 </details>
 
 ## Run it yourself
@@ -114,17 +124,17 @@ Requirements: Node.js 20+, a Postgres database, a PayPal developer sandbox app (
 ```bash
 npm install
 cp env.example .env.local   # fill in the values
-npm run build \\\&\\\& npm start
+npm run build && npm start
 ```
 
-|Variable|Purpose|
-|-|-|
-|`PAYPAL\\\_CLIENT\\\_ID`, `PAYPAL\\\_CLIENT\\\_SECRET`|Sandbox app credentials|
-|`PAYPAL\\\_ENV`|`sandbox`|
-|`APP\\\_URL`|Public URL, used for the PayPal return link|
-|`DATABASE\\\_URL`|Postgres connection string|
-|`GOOGLE\\\_GENERATIVE\\\_AI\\\_API\\\_KEY` / `GROQ\\\_API\\\_KEY` / `ANTHROPIC\\\_API\\\_KEY`|Any one or more|
-|`MAX\\\_PAYOUT\\\_USD`|Spend cap per payout (default 500)|
+| Variable | Purpose |
+|---|---|
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | Sandbox app credentials |
+| `PAYPAL_ENV` | `sandbox` |
+| `APP_URL` | Public URL, used for the PayPal return link |
+| `DATABASE_URL` | Postgres connection string |
+| `GOOGLE_GENERATIVE_AI_API_KEY` / `GROQ_API_KEY` / `ANTHROPIC_API_KEY` | Any one or more |
+| `MAX_PAYOUT_USD` | Spend cap per payout (default 500) |
 
 Tables are created automatically on first run.
 
@@ -135,4 +145,3 @@ The demo holds funds in the platform's sandbox business account and pays out wit
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
