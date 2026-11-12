@@ -7,6 +7,7 @@ import { generateChecklist, verifySubmission } from "@/lib/ai";
 import { createFundingOrder } from "@/lib/paypal";
 import { settleJob, cancelAndRefund } from "@/lib/agent";
 import { canRefund } from "@/lib/rules";
+import { requireUser, accessTo } from "@/lib/auth";
 
 function friendly(e: unknown) {
   const msg = String((e as Error)?.message ?? e);
@@ -23,10 +24,11 @@ async function ready() {
 
 export async function postJob(form: FormData) {
   await ready();
+  const user = await requireUser("client");
   const title = String(form.get("title") ?? "").trim();
   const brief = String(form.get("brief") ?? "").trim();
   const amount = Number(form.get("amount"));
-  const clientEmail = String(form.get("client_email") ?? "").trim();
+  const clientEmail = user.email;
   const categories = ["writing", "translation", "social", "design", "data", "code"] as const;
   const rawCategory = String(form.get("category") ?? "writing");
   const category = (categories as readonly string[]).includes(rawCategory) ? (rawCategory as (typeof categories)[number]) : "writing";
@@ -53,7 +55,9 @@ export async function postJob(form: FormData) {
 
 export async function fundJob(id: string) {
   await ready();
+  const user = await requireUser("client");
   const [job] = await sql`select * from jobs where id = ${id}`;
+  if (!job || !accessTo(job as never, user).isClient) redirect(`/?error=${encodeURIComponent("Only the client who posted this job can fund it.")}`);
   let order;
   try {
     order = await createFundingOrder(id, job.title, Number(job.amount));
@@ -68,19 +72,22 @@ export async function fundJob(id: string) {
   redirect(approveUrl);
 }
 
-export async function acceptJob(id: string, form: FormData) {
+export async function acceptJob(id: string) {
   await ready();
-  const email = String(form.get("freelancer_email") ?? "").trim();
-  if (!email) throw new Error("Freelancer PayPal email is required");
-  await sql`update jobs set freelancer_email = ${email}, status = 'in_progress', updated_at = now()
-            where id = ${id} and status = 'funded'`;
-  await logEvent(id, "freelancer", "job_accepted", { email });
+  const user = await requireUser("freelancer");
+  // Only one freelancer can win the job: the update succeeds only while it is still open.
+  const taken = await sql`update jobs set freelancer_email = ${user.email}, status = 'in_progress', updated_at = now()
+            where id = ${id} and status = 'funded' and freelancer_email is null returning id`;
+  if (taken.length === 0) redirect(`/work?error=${encodeURIComponent("Someone else accepted this job first.")}`);
+  await logEvent(id, "freelancer", "job_accepted", { text: `Accepted by ${user.name}` });
   revalidatePath(`/jobs/${id}`);
 }
 
 export async function submitWork(id: string, form: FormData) {
   await ready();
+  const user = await requireUser("freelancer");
   const [job] = await sql`select * from jobs where id = ${id}`;
+  if (!job || !accessTo(job as never, user).isFreelancer) redirect(`/work?error=${encodeURIComponent("Only the freelancer who accepted this job can submit work.")}`);
   const note = String(form.get("note") ?? "");
   const text = String(form.get("text") ?? "");
   const file = form.get("file") as File | null;
@@ -106,8 +113,9 @@ export async function submitWork(id: string, form: FormData) {
     await logEvent(id, "agent", "verification_failed", { summary: friendly(e) });
     redirect(`/jobs/${id}?error=${encodeURIComponent(friendly(e))}`);
   }
-  await sql`insert into submissions (job_id, note, file_name, file_text, verdict, overall)
-            values (${id}, ${note}, ${file?.name ?? null}, ${fileText.slice(0, 100_000)}, ${sql.json(verdict.items as never)}, ${verdict.overall})`;
+  await sql`insert into submissions (job_id, note, file_name, file_text, verdict, overall, file_data, file_type)
+            values (${id}, ${note}, ${file?.name ?? null}, ${fileText.slice(0, 100_000)}, ${sql.json(verdict.items as never)}, ${verdict.overall},
+                    ${filePart ? Buffer.from(filePart.data) : null}, ${filePart?.mediaType ?? null})`;
   await logEvent(id, "agent", "verification_complete", { overall: verdict.overall, summary: verdict.summary, measurements: verdict.measurements });
 
   try {
@@ -122,10 +130,68 @@ export async function submitWork(id: string, form: FormData) {
 
 export async function refundJob(id: string) {
   await ready();
+  const user = await requireUser("client");
   const [job] = await sql`select * from jobs where id = ${id}`;
-  if (!job || !canRefund(job as never)) {
+  if (!job || !accessTo(job as never, user).isClient || !canRefund(job as never)) {
     redirect(`/jobs/${id}?error=${encodeURIComponent("A refund is only possible before a freelancer accepts, or after a missed deadline.")}`);
   }
   await cancelAndRefund(id);
+  revalidatePath(`/jobs/${id}`);
+}
+
+/** Freelancer disputes a failed check: an independent model re-checks the same submission. */
+export async function requestSecondOpinion(id: string) {
+  await ready();
+  const user = await requireUser("freelancer");
+  const [job] = await sql`select * from jobs where id = ${id}`;
+  if (!job || !accessTo(job as never, user).isFreelancer || job.status !== "needs_revision") {
+    redirect(`/jobs/${id}?error=${encodeURIComponent("A second opinion is only available after a failed check.")}`);
+  }
+  const [sub] = await sql`select * from submissions where job_id = ${id} order by id desc limit 1`;
+  if (!sub || sub.reviewer !== "primary") {
+    redirect(`/jobs/${id}?error=${encodeURIComponent("This submission already had a second opinion. Fix and resubmit instead.")}`);
+  }
+  await logEvent(id, "freelancer", "second_opinion_requested", {});
+  const filePart = sub.file_data ? { data: new Uint8Array(sub.file_data), mediaType: sub.file_type } : undefined;
+  let verdict;
+  try {
+    verdict = await verifySubmission(job.checklist.items, sub.file_text ?? "", sub.note ?? "", filePart, job.category ?? "writing", true);
+  } catch (e) {
+    console.error(e);
+    redirect(`/jobs/${id}?error=${encodeURIComponent(friendly(e))}`);
+  }
+  await sql`insert into submissions (job_id, note, file_name, file_text, verdict, overall, file_data, file_type, reviewer)
+            values (${id}, ${sub.note}, ${sub.file_name}, ${sub.file_text}, ${sql.json(verdict.items as never)}, ${verdict.overall},
+                    ${sub.file_data}, ${sub.file_type}, 'second_opinion')`;
+  if (verdict.overall === "pass") {
+    await sql`update jobs set status = 'disputed', updated_at = now() where id = ${id}`;
+    await logEvent(id, "agent", "second_opinion_passed", { summary: `${verdict.summary} The client now decides whether to pay.`, measurements: verdict.measurements });
+  } else {
+    await logEvent(id, "agent", "second_opinion_agreed", { summary: `The second reviewer also found missing items. ${verdict.summary}`, measurements: verdict.measurements });
+  }
+  revalidatePath(`/jobs/${id}`);
+}
+
+/** Client's final decision after a second opinion passed the work. */
+export async function decideDispute(id: string, approve: boolean) {
+  await ready();
+  const user = await requireUser("client");
+  const [job] = await sql`select * from jobs where id = ${id}`;
+  if (!job || !accessTo(job as never, user).isClient || job.status !== "disputed") {
+    redirect(`/jobs/${id}?error=${encodeURIComponent("There is no open dispute to decide on this job.")}`);
+  }
+  if (approve) {
+    await logEvent(id, "client", "dispute_approved", { text: "Client accepted the second opinion and approved payment." });
+    try {
+      await settleJob(id);
+    } catch (e) {
+      console.error(e);
+      redirect(`/jobs/${id}?error=${encodeURIComponent(friendly(e))}`);
+    }
+  } else {
+    await sql`update jobs set status = 'needs_revision', updated_at = now() where id = ${id}`;
+    await logEvent(id, "client", "dispute_rejected", { text: "Client kept the rejection. The freelancer can fix and resubmit." });
+    await logEvent(id, "agent", "revision_requested", { message: "The client reviewed the second opinion and still wants changes. Check the red items and resubmit." });
+  }
   revalidatePath(`/jobs/${id}`);
 }

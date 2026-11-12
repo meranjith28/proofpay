@@ -36,9 +36,23 @@ export async function migrate() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )`;
+  // Accounts: a person signs up as a client or a freelancer. Their email is also their PayPal email.
+  await sql`
+    create table if not exists users (
+      id serial primary key,
+      email text not null unique,
+      name text not null,
+      role text not null check (role in ('client', 'freelancer')),
+      password_hash text,
+      created_at timestamptz not null default now()
+    )`;
   // Added on day 2: job type and optional deadline. Safe to run on existing tables.
   await sql`alter table jobs add column if not exists category text not null default 'writing'`;
   await sql`alter table jobs add column if not exists due_at timestamptz`;
+  // Disputes: the submission's original file is kept so a second reviewer can re-check it.
+  await sql`alter table submissions add column if not exists file_data bytea`;
+  await sql`alter table submissions add column if not exists file_type text`;
+  await sql`alter table submissions add column if not exists reviewer text not null default 'primary'`;
   await sql`
     create table if not exists submissions (
       id serial primary key,

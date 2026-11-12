@@ -12,8 +12,6 @@ export function TemplatePicker({ templates }: { templates: Template[] }) {
     set("brief", t.brief);
     set("amount", String(t.amount));
     set("category", t.category);
-    const client = document.querySelector<HTMLInputElement>('[name="client_email"]');
-    if (client && !client.value) client.value = "sb-kszla53855379@personal.example.com";
     const form = document.getElementById("post");
     form?.scrollIntoView({ behavior: "smooth", block: "start" });
     document.querySelector<HTMLInputElement>('[name="title"]')?.focus({ preventScroll: true });

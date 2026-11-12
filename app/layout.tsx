@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { currentUser } from "@/lib/auth";
+import { signOut } from "./auth-actions";
 
 export const metadata: Metadata = {
   title: "ProofPay — freelance payments that release themselves",
   description: "Clients fund jobs through PayPal. An AI agent checks the work against an agreed checklist and pays the freelancer when every item passes.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = await currentUser().catch(() => null);
   return (
     <html lang="en">
       <head>
@@ -24,12 +27,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span aria-hidden className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-ink text-sm text-white">$</span>
               ProofPay
             </a>
-            <nav className="flex items-center gap-5 text-sm font-medium">
-              <a href="/#post" className="hover:text-action">Post a job</a>
-              <a href="/work" className="hover:text-action">Find work</a>
-              <span className="hidden rounded-full border border-held/40 bg-held-soft px-3 py-1 text-xs font-medium text-held sm:inline">
+            <nav className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2 text-sm font-medium">
+              {user?.role === "client" && <a href="/" className="hover:text-action">Your jobs</a>}
+              {user?.role === "client" && <a href="/#post" className="hover:text-action">Post a job</a>}
+              {user?.role === "freelancer" && <a href="/work" className="hover:text-action">Find work</a>}
+              {user?.role === "freelancer" && <a href="/work#mine" className="hover:text-action">Your work</a>}
+              <span className="hidden rounded-full border border-held/40 bg-held-soft px-3 py-1 text-xs font-medium text-held md:inline">
                 PayPal sandbox: test money only
               </span>
+              {user ? (
+                <form action={signOut} className="flex items-center gap-3">
+                  <span className="text-muted">
+                    {user.name} <span className="rounded bg-paper px-1.5 py-0.5 text-xs">{user.role === "client" ? "Client" : "Freelancer"}</span>
+                  </span>
+                  <button className="underline underline-offset-4 hover:text-action">Sign out</button>
+                </form>
+              ) : (
+                <a href="/login" className="rounded-md bg-ink px-3 py-1.5 text-white hover:bg-black">Sign in</a>
+              )}
             </nav>
           </div>
         </header>

@@ -6,7 +6,7 @@ type Where = "client" | "held" | "freelancer";
 
 export function whereIsMoney(status: string): Where {
   if (status === "paid") return "freelancer";
-  if (["funded", "in_progress", "submitted", "needs_revision"].includes(status)) return "held";
+  if (["funded", "in_progress", "submitted", "needs_revision", "disputed"].includes(status)) return "held";
   return "client"; // draft, funding, refunded
 }
 

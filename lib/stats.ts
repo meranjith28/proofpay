@@ -13,7 +13,7 @@ export async function freelancerStats(email: string) {
       count(*) filter (where status = 'paid')::int as paid,
       count(*) filter (where status = 'paid' and attempts = 1)::int as first_try,
       coalesce(sum(amount) filter (where status = 'paid'), 0)::float as earned,
-      count(*) filter (where status in ('in_progress','submitted','needs_revision'))::int as active
+      count(*) filter (where status in ('in_progress','submitted','needs_revision','disputed'))::int as active
     from mine`;
   const paid = row?.paid ?? 0;
   return {

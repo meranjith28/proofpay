@@ -1,6 +1,8 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { currentUser, accessTo } from "@/lib/auth";
 import { sql, migrate } from "@/lib/db";
-import { fundJob, acceptJob, submitWork, refundJob } from "../../actions";
+import { fundJob, acceptJob, submitWork, refundJob, requestSecondOpinion, decideDispute } from "../../actions";
+import { AskAgent } from "../../ask-agent";
 import { StatusBadge } from "../../status";
 import { SubmitButton } from "../../submit-button";
 import { MoneyPath } from "../../money-path";
@@ -18,7 +20,7 @@ type Measurements = Record<string, unknown>;
 
 const STEPS = ["Posted", "Funded", "Accepted", "Submitted", "Paid"];
 function stepIndex(status: string) {
-  return ({ draft: 0, funding: 0, funded: 1, in_progress: 2, submitted: 3, needs_revision: 3, paid: 4, refunded: 1 } as Record<string, number>)[status] ?? 0;
+  return ({ draft: 0, funding: 0, funded: 1, in_progress: 2, submitted: 3, needs_revision: 3, disputed: 3, paid: 4, refunded: 1 } as Record<string, number>)[status] ?? 0;
 }
 const IST = (d: Date) => new Date(d).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
 
@@ -28,20 +30,26 @@ export default async function JobPage({ params, searchParams }: { params: Promis
   const { funding, error } = await searchParams;
   const [job] = await sql`select * from jobs where id = ${id}`;
   if (!job) notFound();
+  const user = await currentUser();
+  if (!user) redirect("/login");
+  const access = accessTo(job as never, user);
+  if (!access.canView) return <NotYours taken={user.role === "freelancer" && !!job.freelancer_email} role={user.role} />;
   const [sub] = await sql`select * from submissions where job_id = ${id} order by id desc limit 1`;
   const events = await sql`select * from events where job_id = ${id} order by id asc`;
   const items: Item[] = job.checklist.items ?? [];
   const verdicts: Verdict[] = sub?.verdict ?? [];
   const latest = (action: string) => [...events].reverse().find((e) => e.action === action);
   const revision = job.status === "needs_revision" ? latest("revision_requested") : undefined;
-  const measured: Measurements | undefined = latest("verification_complete")?.detail?.measurements ?? undefined;
+  const measured: Measurements | undefined =
+    [...events].reverse().find((e) => e.detail?.measurements)?.detail?.measurements ?? undefined;
+  const secondOpinion = sub?.reviewer === "second_opinion";
   const funded = latest("funding_checked");
   const amount = Number(job.amount);
   const step = stepIndex(job.status);
   const passedCount = verdicts.filter((v) => v.passed).length;
   const overdue = isOverdue(job as never);
   const dueText = job.due_at ? new Date(job.due_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium" }) : "";
-  const refundable = canRefund(job as never);
+  const refundable = access.isClient && canRefund(job as never);
   const sample = templateFor(job.category)?.sample;
 
   return (
@@ -95,7 +103,9 @@ export default async function JobPage({ params, searchParams }: { params: Promis
           <Card
             title="Acceptance checklist"
             aside={verdicts.length ? `${passedCount} of ${items.length} passed` : `${items.length} ${items.length === 1 ? "item" : "items"}`}
-            subtitle="Written by AI from the brief. Payment is released only when every item passes."
+            subtitle={secondOpinion
+              ? "Showing the independent second opinion, requested by the freelancer."
+              : "Written by AI from the brief. Payment is released only when every item passes."}
           >
             <ol className="space-y-3">
               {items.map((it) => {
@@ -132,7 +142,11 @@ export default async function JobPage({ params, searchParams }: { params: Promis
         </div>
 
         <div className="order-first space-y-6 md:order-none md:col-span-2">
-          <NextStep job={job} revision={revision?.detail?.message} amount={amount} sample={sample} />
+          <NextStep job={job} revision={revision?.detail?.message} amount={amount} sample={sample}
+            role={access.isClient ? "client" : access.isFreelancer ? "freelancer" : "visitor"}
+            canDispute={job.status === "needs_revision" && sub?.reviewer === "primary"}
+            passedCount={passedCount} total={items.length} />
+          <AskAgent jobId={job.id} role={access.isClient ? "client" : "freelancer"} />
 
           <Card title="Payment record" subtitle="PayPal references for every money movement on this job.">
             <dl className="space-y-2 text-sm">
@@ -183,58 +197,83 @@ export default async function JobPage({ params, searchParams }: { params: Promis
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function NextStep({ job, revision, amount, sample }: { job: any; revision?: string; amount: number; sample?: string }) {
+function NextStep({ job, revision, amount, sample, role, canDispute, passedCount, total }: { job: any; revision?: string; amount: number; sample?: string; role: "client" | "freelancer" | "visitor"; canDispute: boolean; passedCount: number; total: number }) {
   const accept = ACCEPT[job.category as Category] ?? ACCEPT.writing;
   const turn = (who: string, tone: string) => <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${tone}`}>{who}</span>;
+  const waiting = (who: string, title: string, text: string) => (
+    <div className="space-y-2">{turn(who, "bg-slate-200 text-slate-700")}<h2 className="text-xl font-bold">{title}</h2><p className="text-sm text-muted">{text}</p></div>
+  );
+  const s = job.status;
   return (
     <section className="rounded-xl border-2 border-ink bg-white p-5">
-      {(job.status === "draft" || job.status === "funding") && (
+      {(s === "draft" || s === "funding") && (role === "client" ? (
         <form action={fundJob.bind(null, job.id)} className="space-y-3">
-          {turn("Client's turn", "bg-ink text-white")}
+          {turn("Your turn", "bg-ink text-white")}
           <h2 className="text-xl font-bold">Fund the job</h2>
           <p className="text-sm text-muted">You pay ${amount.toFixed(2)} through PayPal. ProofPay holds it; the freelancer is paid only after the work passes.</p>
           <SubmitButton pending="Opening PayPal…">Fund ${amount.toFixed(2)} with PayPal</SubmitButton>
         </form>
-      )}
-      {job.status === "funded" && (
+      ) : waiting("Client's turn", "Waiting for funding", "The client hasn't funded this job yet."))}
+
+      {s === "funded" && (role === "freelancer" ? (
         <form action={acceptJob.bind(null, job.id)} className="space-y-3">
-          {turn("Freelancer's turn", "bg-held text-white")}
-          <h2 className="text-xl font-bold">Accept the job</h2>
-          <p className="text-sm text-muted">The money is already held. Enter the PayPal email that should receive the payout.</p>
-          <input name="freelancer_email" type="email" required placeholder="sb-…@personal.example.com" className="input" />
+          {turn("Open job", "bg-held text-white")}
+          <h2 className="text-xl font-bold">Accept this job</h2>
+          <p className="text-sm text-muted">${amount.toFixed(2)} is already held. Once you accept, the job is yours alone, and the payout goes to your PayPal account when every checklist item passes.</p>
           <SubmitButton pending="Accepting…">Accept job</SubmitButton>
         </form>
-      )}
-      {(job.status === "in_progress" || job.status === "needs_revision" || job.status === "submitted") && (
-        <form action={submitWork.bind(null, job.id)} className="space-y-3">
-          {turn("Freelancer's turn", "bg-held text-white")}
-          <h2 className="text-xl font-bold">{job.status === "needs_revision" ? "Fix and resubmit" : "Submit the work"}</h2>
-          {revision && <div className="rounded-md bg-danger-soft p-3 text-sm">{revision}</div>}
-          <p className="text-sm text-muted">{accept.hint}</p>
-          {accept.paste && (
-            <>
-              <textarea name="text" rows={6} className="input font-mono text-xs" placeholder={accept.placeholder} />
-              {sample && <SampleFill sample={sample} />}
-            </>
+      ) : waiting("Freelancers' turn", "Waiting for a freelancer", "Your job is live on the Find work board. The first freelancer to accept gets it."))}
+
+      {(s === "in_progress" || s === "needs_revision" || s === "submitted") && (role === "freelancer" ? (
+        <div className="space-y-4">
+          <form action={submitWork.bind(null, job.id)} className="space-y-3">
+            {turn("Your turn", "bg-held text-white")}
+            <h2 className="text-xl font-bold">{s === "needs_revision" ? "Fix and resubmit" : "Submit the work"}</h2>
+            {revision && <div className="rounded-md bg-danger-soft p-3 text-sm">{revision}</div>}
+            <p className="text-sm text-muted">{accept.hint}</p>
+            {accept.paste && (
+              <>
+                <textarea name="text" rows={6} className="input font-mono text-xs" placeholder={accept.placeholder} />
+                {sample && <SampleFill sample={sample} />}
+              </>
+            )}
+            <input name="file" type="file" accept={accept.files} className="block w-full text-sm" aria-label="Upload a file" />
+            <input name="note" className="input" placeholder="Note to the reviewer (optional)" />
+            <SubmitButton pending="Checking…" stages={["Measuring the work exactly…", "Checking each checklist item…", "Confirming funds with PayPal…", "Settling the payment…"]}>
+              Submit for checking
+            </SubmitButton>
+          </form>
+          {canDispute && (
+            <form action={requestSecondOpinion.bind(null, job.id)} className="space-y-2 border-t border-line pt-4">
+              <p className="text-sm"><strong>Think the check got it wrong?</strong> <span className="text-muted">A different AI model re-checks the same submission independently. If it passes, the client decides.</span></p>
+              <SubmitButton pending="Getting a second opinion…" stages={["Sending to an independent reviewer…", "Re-checking every item…"]}>Ask for a second opinion</SubmitButton>
+            </form>
           )}
-          <input name="file" type="file" accept={accept.files} className="block w-full text-sm" aria-label="Upload a file" />
-          <input name="note" className="input" placeholder="Note to the reviewer (optional)" />
-          <SubmitButton
-            pending="Checking…"
-            stages={["Measuring the text exactly…", "Checking each checklist item…", "Confirming funds with PayPal…", "Settling the payment…"]}
-          >
-            Submit for checking
-          </SubmitButton>
-        </form>
-      )}
-      {job.status === "paid" && (
+        </div>
+      ) : s === "needs_revision"
+        ? waiting("Freelancer's turn", "Changes requested", `The work passed ${passedCount} of ${total} items. The freelancer has been told exactly what to fix.`)
+        : waiting("Freelancer's turn", "Work in progress", "The freelancer is working on it. You'll see the checklist results here as soon as they submit."))}
+
+      {s === "disputed" && (role === "client" ? (
+        <div className="space-y-3">
+          {turn("Your decision", "bg-action text-white")}
+          <h2 className="text-xl font-bold">The second opinion passed the work</h2>
+          <p className="text-sm text-muted">The first check failed, but an independent AI reviewer found all {total} items met. See the evidence in the checklist. Pay the freelancer, or keep the rejection and ask for changes.</p>
+          <div className="flex flex-wrap gap-2">
+            <form action={decideDispute.bind(null, job.id, true)}><SubmitButton pending="Paying through PayPal…">Approve and pay ${amount.toFixed(2)}</SubmitButton></form>
+            <form action={decideDispute.bind(null, job.id, false)}><SubmitButton variant="danger" pending="Saving…">Keep the rejection</SubmitButton></form>
+          </div>
+        </div>
+      ) : waiting("Client's turn", "Second opinion passed your work", "The client is reviewing it and will decide whether to release the payment."))}
+
+      {s === "paid" && (
         <div className="space-y-2">
           {turn("Done", "bg-verified text-white")}
           <h2 className="text-xl font-bold">Paid on proof</h2>
           <p className="break-words text-sm">Every item passed. ${amount.toFixed(2)} was sent to <span className="break-all">{job.freelancer_email}</span> through PayPal Payouts.</p>
         </div>
       )}
-      {job.status === "refunded" && (
+      {s === "refunded" && (
         <div className="space-y-2">
           {turn("Closed", "bg-slate-200 text-slate-700")}
           <h2 className="text-xl font-bold">Refunded</h2>
@@ -242,6 +281,22 @@ function NextStep({ job, revision, amount, sample }: { job: any; revision?: stri
         </div>
       )}
     </section>
+  );
+}
+
+function NotYours({ taken, role }: { taken: boolean; role: string }) {
+  return (
+    <div className="mx-auto max-w-xl rounded-xl border border-line bg-white p-8 text-center">
+      <h1 className="text-2xl font-bold">{taken ? "This job has been taken" : "This job isn't available to you"}</h1>
+      <p className="mt-2 text-muted">
+        {taken
+          ? "Another freelancer accepted it. Only the client and that freelancer can open it now."
+          : "Only the client who posted it, and the freelancer who accepts it, can open this job."}
+      </p>
+      <a href={role === "freelancer" ? "/work" : "/"} className="mt-5 inline-block rounded-md bg-action px-4 py-2 text-sm font-semibold text-white">
+        {role === "freelancer" ? "Find other work" : "Back to your jobs"}
+      </a>
+    </div>
   );
 }
 

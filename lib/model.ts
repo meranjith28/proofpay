@@ -55,11 +55,13 @@ export function callOptions() {
 /** Run an AI call, falling back to the next model if one fails. */
 export async function withModel<T>(
   run: (model: LanguageModel) => Promise<T>,
-  opts: { needsFiles?: boolean } = {},
+  opts: { needsFiles?: boolean; independent?: boolean } = {},
 ): Promise<T> {
   let lastError: unknown = new Error("No AI provider key is configured");
   // Groq models here read text only; images and PDFs go straight to Gemini or Claude.
-  const list = candidates().filter((c) => !(opts.needsFiles && c.provider === "groq"));
+  let list = candidates().filter((c) => !(opts.needsFiles && c.provider === "groq"));
+  // A second opinion should come from a different model than the first review.
+  if (opts.independent && list.length > 1) list = [...list.slice(1), list[0]];
   for (const c of list) {
     const started = Date.now();
     const name = `${c.provider}:${c.id}`;
